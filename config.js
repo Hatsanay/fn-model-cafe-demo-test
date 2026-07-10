@@ -10,6 +10,7 @@ const API_BASE = 'https://fnmodelbackend.dktimeh.com/api/v1'
 // แต้มที่ได้ = Math.floor(ยอดชำระ × POINT_PER_BAHT)
 // เช่น BAHT_FOR_1_POINT = 10  → 10 บาท = 1 แต้ม
 //      BAHT_FOR_1_POINT = 20  →  5 บาท = 1 แต้ม (ใส่ตัวเลขได้เลย)
+//
 const BAHT_FOR_1_POINT  = 50
 
 
