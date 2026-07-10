@@ -22,26 +22,28 @@ function _detectThaiVoice() {
     _cdThaiVoice = thai || false;
 }
 
+function _createSilentWavUrl() {
+    const sampleRate = 22050;
+    const numSamples = Math.floor(sampleRate * 0.1);
+    const dataLen = numSamples * 2;
+    const buf = new ArrayBuffer(44 + dataLen);
+    const v = new DataView(buf);
+    const s = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    s(0, 'RIFF'); v.setUint32(4, 36 + dataLen, true);
+    s(8, 'WAVE'); s(12, 'fmt '); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+    v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    s(36, 'data'); v.setUint32(40, dataLen, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
 function unlockAudio() {
-    // สร้าง silence ผ่าน AudioContext (1 sample) เพื่อ unlock Safari อย่างแท้จริง
-    try {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (AC) {
-            const ctx = new AC();
-            const buf = ctx.createBuffer(1, 1, 22050);
-            const src = ctx.createBufferSource();
-            src.buffer = buf;
-            src.connect(ctx.destination);
-            src.start(0);
-            ctx.close();
-        }
-    } catch(e) {}
-
-    // สร้าง Audio element และ unlock ด้วย
     if (!_cdAudio) _cdAudio = document.createElement('audio');
-    _cdAudio.src = '';
-    _cdAudio.play().catch(() => {});
-
+    const url = _createSilentWavUrl();
+    _cdAudio.src = url;
+    _cdAudio.play().finally ? _cdAudio.play().finally(() => URL.revokeObjectURL(url))
+                             : _cdAudio.play().then(() => URL.revokeObjectURL(url)).catch(() => URL.revokeObjectURL(url));
     document.getElementById('soundBanner').style.display = 'none';
 }
 
