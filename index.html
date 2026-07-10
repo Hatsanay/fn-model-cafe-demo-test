@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ระบบจับเวลาคาเฟ่รถตัก FN MODEL EXCAVATOR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="header-container">
+        <div class="header-section">
+            <h2>ระบบจับเวลาคาเฟ่รถตัก FN MODEL EXCAVATOR</h2>
+            <div class="controls-top">
+                <label>จำนวนโต๊ะลูกค้า:</label>
+                <input type="number" id="timerCount" value="8" min="1" max="50">
+                <button class="btn-start-all" onclick="controlAll('start')">เริ่มทั้งหมด</button>
+                <button class="btn-stop-all" onclick="controlAll('stop')">หยุดทั้งหมด</button>
+                <button class="btn-reset-all" onclick="controlAll('reset')">ล้างทั้งหมด</button>
+            </div>
+        </div>
+        <div class="logo-wrapper">
+            <img src="https://github.com/funnypdc/logo/blob/main/logo-01.png?raw=true" alt="FN LOGO">
+        </div>
+    </div>
+
+    
+
+    <div id="timerContainer" class="timer-grid"></div>
+    <div id="nameInputs"
+        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 30px 0;">
+    </div>
+    <hr style="border: 0.5px solid #333; margin: 40px 0;">
+    <div id="summaryContainer" class="summary-grid"></div>
+
+    <div class="log-section">
+        <div style="position:relative; text-align:center; margin-bottom:12px;">
+            <h3 style="margin: 0; color: #00e676;">📜 ประวัติการรับเงิน</h3>
+            <button style="position:absolute;top:50%;right:0;transform:translateY(-50%);background-color:#c62828;color:white;padding:5px 12px;font-size:0.82rem;border:none;border-radius:5px;cursor:pointer;"
+                onclick="clearAllLogs()">ล้างประวัติทั้งหมด</button>
+        </div>
+        <div id="logTableContainer">
+            <table class="log-table">
+                <thead>
+                    <tr>
+                        <th>เวลา</th>
+                        <th>รายการ</th>
+                        <th>Class</th>
+                        <th>เวลาเล่น</th>
+                        <th>ประเภท</th>
+                        <th>ยอดเงิน</th>
+                        <th style="text-align: center;">ลบ</th>
+                    </tr>
+                </thead>
+                <tbody id="logBody"></tbody>
+            </table>
+            <div id="logEmpty" class="log-empty">ยังไม่มีประวัติการขายในขณะนี้</div>
+        </div>
+    </div>
+
+    <!-- Modal เลือก Package เหมาเวลา -->
+    <div id="cdModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#1e1e1e;border-radius:12px;padding:24px;width:380px;max-width:95vw;border:1px solid #333;">
+            <h4 id="cdModalTitle" style="color:#f1c40f;margin:0 0 16px;text-align:center;">⏱ เลือก Package เหมาเวลา</h4>
+            <div id="cdPackageList" style="display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow-y:auto;"></div>
+            <button onclick="closeCdModal()" style="width:100%;margin-top:14px;background:#333;color:#aaa;padding:10px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-size:0.95rem;">ยกเลิก</button>
+        </div>
+    </div>
+
+    <!-- Modal เพิ่ม/แก้ไข Package เหมาเวลา (Admin) -->
+    <div id="cdPkgModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#1e1e1e;border-radius:12px;padding:24px;width:340px;max-width:95vw;border:1px solid #333;">
+            <h4 id="cdPkgModalTitle" style="color:#f1c40f;margin:0 0 16px;">เพิ่ม Package</h4>
+            <input id="cdPkgId" type="hidden">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <select id="cdPkgClass" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                    <option value="A">Class A</option>
+                    <option value="B">Class B</option>
+                    <option value="C">Class C</option>
+                </select>
+                <input id="cdPkgSeconds" type="number" placeholder="ระยะเวลา (วินาที) * เช่น 1800 = 30 นาที" min="60" step="1" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;" oninput="updateCdSecondsHint(this.value)">
+                <div id="cdSecondsHint" style="font-size:0.75rem;color:#f1c40f;margin-top:-4px;padding-left:2px;min-height:16px;"></div>
+                <input id="cdPkgPrice" type="number" placeholder="ราคา (บาท) *" min="0" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                <input id="cdPkgAlert" type="number" placeholder="แจ้งเตือนก่อนหมดเวลา (วินาที)" value="120" min="0" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;" oninput="updateCdAlertHint(this.value)">
+                <div id="cdAlertHint" style="font-size:0.75rem;color:#f1c40f;margin-top:-4px;padding-left:2px;min-height:16px;"></div>
+                <select id="cdPkgStatus" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                    <option value="active">เปิดใช้งาน</option>
+                    <option value="inactive">ปิดใช้งาน</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:18px;">
+                <button onclick="closeCdPkgModal()" style="flex:1;background:#333;color:#aaa;padding:10px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;">ยกเลิก</button>
+                <button onclick="saveCdPackage()" style="flex:1;background:#f1c40f;color:#121212;padding:10px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-weight:bold;">บันทึก</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ส่วนจัดการ Package เหมาเวลา -->
+    <div class="report-section" style="margin-top:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <h4 style="color:#f1c40f;margin:0;">⏱ จัดการ Package เหมาเวลา</h4>
+            <button onclick="openCdPkgModal(null)" style="background:#f1c40f;color:#121212;padding:6px 18px;font-size:0.85rem;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-weight:bold;">+ เพิ่ม Package</button>
+        </div>
+        <div id="cdAdminTable"></div>
+    </div>
+
+    <!-- ส่วนจัดการของรางวัล (CRUD) -->
+    <div id="rewardsAdminSection" class="report-section" style="margin-top:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <h4 style="color:#f57c00;margin:0;">🎁 จัดการของรางวัล</h4>
+            <button onclick="openRewardModal(null)" style="background:#f57c00;color:#fff;padding:6px 18px;font-size:0.85rem;border-radius:6px;">+ เพิ่มรางวัล</button>
+        </div>
+        <div id="rewardsAdminTable"></div>
+    </div>
+
+    <!-- Modal เพิ่ม/แก้ไขรางวัล -->
+    <div id="rewardModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;align-items:center;justify-content:center;">
+        <div style="background:#1e1e1e;border-radius:12px;padding:24px;width:340px;max-width:95vw;border:1px solid #333;">
+            <h4 id="rewardModalTitle" style="color:#f57c00;margin:0 0 16px;">เพิ่มรางวัล</h4>
+            <input id="rmId" type="hidden">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <input id="rmName" placeholder="ชื่อรางวัล *" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                <select id="rmType" onchange="onRewardTypeChange()" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                    <option value="item">ของรางวัล (item)</option>
+                    <option value="free_time">เวลาเล่นฟรี (free_time)</option>
+                    <option value="discount">ส่วนลด (discount)</option>
+                    <option value="privilege">สิทธิพิเศษ (privilege)</option>
+                </select>
+                <input id="rmPoints" type="number" placeholder="แต้มที่ใช้ *" min="1" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                <div id="rmFreeTimeRow" style="display:none;">
+                    <input id="rmFreeSeconds" type="number" placeholder="วินาทีเล่นฟรี (เช่น 600 = 10 นาที)" min="1" style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                </div>
+                <div id="rmDiscountRow" style="display:none;">
+                    <input id="rmDiscountValue" type="number" placeholder="ส่วนลดเป็นบาท" min="0" style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                </div>
+                <input id="rmStock" type="number" placeholder="จำนวน stock (ว่างไว้ = ไม่จำกัด)" min="0" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                <select id="rmStatus" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                    <option value="active">เปิดใช้งาน</option>
+                    <option value="inactive">ปิดใช้งาน</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:18px;">
+                <button onclick="closeRewardModal()" style="flex:1;background:#333;color:#aaa;padding:10px;border-radius:6px;">ยกเลิก</button>
+                <button onclick="saveReward()" style="flex:1;background:#f57c00;color:#fff;padding:10px;border-radius:6px;font-weight:bold;">บันทึก</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ส่วนดูแต้มลูกค้า (สำหรับพนักงาน) -->
+    <div class="report-section" style="margin-top:20px;">
+        <div style="position:relative; margin-bottom:12px;">
+            <h4 style="color:#f1c40f; margin:0; text-align:center;">⭐ ดูแต้มลูกค้า</h4>
+            <button onclick="document.getElementById('lookupPhone').value='';document.getElementById('lookupResult').innerHTML=''"
+                style="position:absolute;top:50%;right:0;transform:translateY(-50%);background:#c0392b;color:white;font-weight:bold;padding:5px 12px;font-size:0.82rem;white-space:nowrap;border:none;border-radius:5px;cursor:pointer;">ล้างเบอร์ลูกค้า</button>
+        </div>
+        <div id="pointsConfigDisplay" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;"></div>
+        <div style="display:flex; gap:10px;">
+            <input type="tel" id="lookupPhone" placeholder="กรอกเบอร์โทรศัพท์" maxlength="10" autocomplete="off"
+                oninput="this.value=this.value.replace(/\D/g,'');if(this.value.length===10)lookupPoints();else if(!this.value)document.getElementById('lookupResult').innerHTML=''"
+                onkeydown="if(event.key==='Enter')lookupPoints()"
+                style="flex:1; background:#333; border:1px solid #444; color:white; padding:10px 14px; border-radius:6px; font-size:1rem; font-family:inherit;">
+            <button onclick="lookupPoints()"
+                style="background:#f1c40f; color:#121212; font-weight:bold; padding:10px 20px; white-space:nowrap;">ค้นหา</button>
+        </div>
+        <div id="lookupResult"></div>
+    </div>
+
+
+    
+    <div class="report-section">
+        <button class="btn-monthly-report" onclick="openMonthlyReportPage()">📊 ดูรายงานสรุปรายเดือน</button>
+
+        <div class="report-header">ลูกค้าทั้งหมด <span id="totalClients">0</span> โต๊ะ</div>
+        <div class="report-row">
+            Class <span class="highlight">A</span> : <span id="countA">0</span> โต๊ะ &nbsp;&nbsp;
+            Class <span class="highlight">B</span> : <span id="countB">0</span> โต๊ะ &nbsp;&nbsp;
+            Class <span class="highlight">C</span> : <span id="countC">0</span> โต๊ะ
+        </div>
+        <div class="report-row" style="font-size: 1rem; color: #aaa;">
+            รายได้ Class A: <span style="color: #00e676; font-weight: bold;" id="incomeA">0</span> บาท
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            รายได้ Class B: <span style="color: #00e676; font-weight: bold;" id="incomeB">0</span> บาท
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            รายได้ Class C: <span style="color: #00e676; font-weight: bold;" id="incomeC">0</span> บาท
+        </div>
+        <div class="report-row">
+            รวมเวลาเล่นทั้งหมด <span class="highlight" id="totalHours">0</span> ชั่วโมง <span class="highlight"
+                id="totalMinutes">0</span> นาที
+        </div>
+        <div class="report-row"
+            style="border-top: 1px dashed #333; padding-top: 15px; margin-top: 15px; font-size: 1rem; color: #aaa;">
+            เงินสดรวม: <span style="color: #0288d1; font-weight: bold;" id="cashTotal">0</span> บาท
+            &nbsp;&nbsp;|&nbsp;&nbsp;
+            เงินโอนรวม: <span style="color: #f57c00; font-weight: bold;" id="transferTotal">0</span> บาท
+        </div>
+        <div class="report-row" style="font-size: 1.3rem; margin-top: 5px;">
+            ราคาทั้งหมด <span class="highlight" id="grandTotal" style="font-size: 1.5rem;">0</span> บาท
+        </div>
+        <button class="report-btn-reset" onclick="resetFullReport()">รีเซ็ตยอดขายวันนี้</button>
+    </div>
+
+    <script>
+
+    </script>
+
+
+
+    <div class="backup-section">
+        <h4 style="color:#0288d1; margin:0 0 8px 0;">💾 สำรอง / กู้คืนข้อมูล</h4>
+        <p style="font-size:0.8rem; color:#888; margin:0 0 15px 0;">แนะนำให้ Export Backup ทุกสัปดาห์
+            เพื่อป้องกันข้อมูลสูญหายเมื่อล้าง browser หรือเปลี่ยนอุปกรณ์</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button onclick="exportBackup()" style="background:#0288d1; color:white; flex:1;">⬇️ Export Backup
+                (.json)</button>
+            <button onclick="document.getElementById('importFileInput').click()"
+                style="background:#f57c00; color:white; flex:1;">⬆️ Import Backup (กู้คืน)</button>
+            <input type="file" id="importFileInput" accept=".json" style="display:none;" onchange="importBackup(event)">
+        </div>
+    </div>
+
+    <div class="report-section" style="border: 2px dashed #c62828; margin-top: 20px;">
+        <h4 style="color: #c62828;">สำหรับ iPad: ปุ่มล้างข้อมูลสำรอง</h4>
+        <p style="font-size: 0.8rem; color: #888;">หากกดล้างในหน้ารายงานไม่ได้ ให้ใช้ปุ่มด้านล่างนี้แทนครับ</p>
+        <button class="btn-clear" style="background-color: #c62828; color: white; width: 100%; padding: 15px;"
+            onclick="forceClearAllData()">
+            🗑️ ล้างข้อมูลรายเดือนทั้งหมด (iPad)
+        </button>
+    </div>
+    <!-- Modal รายจ่ายประจำวัน -->
+    <div id="expenseModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 style="color:#f1c40f; text-align:center; margin-bottom:15px;">📝 บันทึกรายจ่ายก่อนปิดยอดรายวัน</h3>
+            <div
+                style="background:#111; border-radius:8px; padding:10px 15px; margin-bottom:15px; text-align:center; color:#aaa; font-size:0.95rem;">
+                รายได้วันนี้: <strong id="modalIncome" style="color:#00e676;">0</strong> บาท
+            </div>
+            <div class="modal-input-row">
+                <input type="text" id="expenseName" placeholder="ชื่อรายการ (เช่น ค่ากาแฟ)"
+                    onkeydown="if(event.key==='Enter')addExpense()">
+                <input type="number" id="expenseAmount" placeholder="จำนวนเงิน (บาท)"
+                    onkeydown="if(event.key==='Enter')addExpense()">
+                <button onclick="addExpense()" style="background:#0288d1; color:white; white-space:nowrap;">+
+                    เพิ่มรายการ</button>
+            </div>
+            <div id="expenseList" class="expense-list">
+                <div style="color:#555; text-align:center; padding:10px; font-style:italic;">ยังไม่มีรายการรายจ่าย</div>
+            </div>
+            <div class="modal-summary">
+                รายจ่ายรวม: <span id="totalExpenseDisplay" style="color:#ff5252; font-weight:bold;">0</span> บาท
+                &nbsp;&nbsp;|&nbsp;&nbsp;
+                กำไรสุทธิ: <span id="netProfitDisplay" style="color:#00e676; font-weight:bold;">0</span> บาท
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel-modal" onclick="closeExpenseModal()">ยกเลิก</button>
+                <button class="btn-confirm-modal" onclick="confirmDailyClose()">✅ ยืนยันปิดยอดรายวัน</button>
+            </div>
+        </div>
+    </div>
+    <!-- Basket Panel -->
+    <div id="basketPanel" class="basket-panel">
+        <div class="basket-header">
+            <div class="basket-title">ตะกร้าชำระเงิน <span class="basket-badge" id="basketCount">0</span></div>
+            <button class="basket-clear-btn" onclick="clearBasket()">✕ ล้างตะกร้า</button>
+        </div>
+        <div id="basketItemsList" class="basket-items-list"></div>
+        <div class="basket-footer">
+            <div class="basket-total-bar">
+                <span class="basket-total-label">ยอดรวมทั้งหมด</span>
+                <span class="basket-total-amount"><strong id="basketSubtotal">0</strong><small>บาท</small></span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;padding:5px 0 2px;border-bottom:1px solid #222;">
+                <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#888;">
+                    <span>ส่วนลดแต้ม</span><span id="bkPtsDisc" style="color:#ff5252;">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#888;">
+                    <span>ส่วนลดอื่นๆ</span><span id="bkManDisc" style="color:#ff5252;">—</span>
+                </div>
+                <div
+                    style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.75rem;color:#ccc;margin-top:2px;">
+                    <span>ราคาที่ต้องชำระ</span>
+                    <span style="font-size:1.55rem;font-weight:700;color:#f1c40f;"><span id="bkFinal">0</span><small
+                            style="font-size:1rem;color:#888;margin-left:2px;">บาท</small></span>
+                </div>
+            </div>
+            <div class="basket-points-section">
+                <input type="tel" id="basketPhone" placeholder="📱 เบอร์ลูกค้า (สะสมแต้ม — ไม่บังคับ)" maxlength="10" autocomplete="off"
+                    oninput="this.value=this.value.replace(/\D/g,'');onBasketPhoneInput(this.value)"
+                    onkeydown="if(event.key==='Enter')checkBasketPoints()">
+                <div id="basketPointsInfo" style="font-size:0.78rem;color:#f1c40f;min-height:16px;padding-left:2px;">
+                </div>
+                <input type="number" id="basketUsePoints" placeholder="ใช้แต้ม" min="1"
+                    oninput="calcBasketPointsDiscount()" disabled>
+            </div>
+            <div class="basket-pay-row">
+                <button id="basketCashBtn" class="btn-pay-type" onclick="selectBasketPayType('cash')">💵 เงินสด</button>
+                <button id="basketTransferBtn" class="btn-pay-type" onclick="selectBasketPayType('transfer')">📱
+                    เงินโอน</button>
+            </div>
+            <button class="basket-confirm-btn" onclick="confirmBasketPayment()">ยืนยันชำระเงิน</button>
+        </div>
+    </div>
+    <script src="config.js"></script>
+    <script src="script.js"></script>
+
+    <script>
+        // เพิ่มฟังก์ชันนี้ไว้ในส่วน <script> ของหน้าหลักของคุณครับ
+        function forceClearAllData() {
+            if (confirm("⚠ ยืนยันการล้างข้อมูลสรุปรายเดือนทั้งหมดถาวร?")) {
+                // ล้างข้อมูลจากต้นทาง
+                localStorage.removeItem('fn_monthly_history');
+                // รีเฟรชหน้าจอเพื่อให้ข้อมูลหายไป
+                alert("ล้างข้อมูลเรียบร้อยแล้วครับ");
+                location.reload();
+            }
+        }
+    </script>
+</body>
+
+</html>
