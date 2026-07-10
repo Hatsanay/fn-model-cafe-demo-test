@@ -13,6 +13,7 @@ let _cdAudioQueue = [];
 let _cdAudioBusy = false;
 let _cdAudioCtx = null;
 let _cdThaiVoice = null;   // null = ยังไม่ได้เช็ค, false = ไม่มี, SpeechSynthesisVoice = มี
+const _isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
 function _initAudioCtx() {
     if (_cdAudioCtx) {
@@ -42,9 +43,9 @@ window.addEventListener('load', () => {
     _detectThaiVoice();
     speechSynthesis.addEventListener('voiceschanged', _detectThaiVoice);
 
-    // ถ้าไม่มี Thai voice ต้องใช้ backend proxy → ต้องการ AudioContext unlock
+    // Safari หรือไม่มี Thai voice → ใช้ backend proxy → ต้องการ AudioContext unlock
     setTimeout(() => {
-        if (!_cdThaiVoice) {
+        if (_isSafari || !_cdThaiVoice) {
             const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
             if (!AudioCtxClass) return;
             const testCtx = new AudioCtxClass();
@@ -53,7 +54,7 @@ window.addEventListener('load', () => {
             }
             testCtx.close();
         }
-    }, 1000); // รอให้ voiceschanged fire ก่อน
+    }, 1000);
 });
 const container = document.getElementById('timerContainer');
 const summaryContainer = document.getElementById('summaryContainer');
@@ -1268,8 +1269,8 @@ async function _cdPlayNext() {
     const text = _cdAudioQueue.shift()();
     if (!text) { _cdPlayNext(); return; }
 
-    // ทาง 1: มี Thai voice → ใช้ Web Speech API
-    if (_cdThaiVoice) {
+    // ทาง 1: มี Thai voice และไม่ใช่ Safari → ใช้ Web Speech API
+    if (_cdThaiVoice && !_isSafari) {
         const utter = new SpeechSynthesisUtterance(text);
         utter.voice = _cdThaiVoice;
         utter.lang = 'th-TH';
