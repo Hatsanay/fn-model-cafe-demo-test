@@ -11,50 +11,32 @@ let _cdModalTimerId = null;
 let _cdModalMode = 'start';
 let _cdAudioQueue = [];
 let _cdAudioBusy = false;
-let _cdAudioCtx = null;
-let _cdThaiVoice = null;   // null = ยังไม่ได้เช็ค, false = ไม่มี, SpeechSynthesisVoice = มี
+let _cdAudio = null;       // Audio element ที่ unlock แล้ว (สำหรับ backend proxy)
+let _cdThaiVoice = null;   // null = ยังไม่เช็ค, false = ไม่มี, SpeechSynthesisVoice = มี
 const _isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-
-function _initAudioCtx() {
-    if (_cdAudioCtx) {
-        if (_cdAudioCtx.state === 'suspended') _cdAudioCtx.resume();
-        return;
-    }
-    _cdAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-}
-document.addEventListener('click', _initAudioCtx);
-document.addEventListener('touchstart', _initAudioCtx);
+const _SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAAACABAAZGF0YQAAAAA=';
 
 function _detectThaiVoice() {
-    const voices = speechSynthesis.getVoices();
-    const thai = voices.find(v => v.lang.startsWith('th'));
+    const thai = speechSynthesis.getVoices().find(v => v.lang.startsWith('th'));
     _cdThaiVoice = thai || false;
 }
 
 function unlockAudio() {
-    _initAudioCtx();
+    if (!_cdAudio) _cdAudio = new Audio();
+    _cdAudio.src = _SILENT;
+    _cdAudio.play().catch(() => {});
     document.getElementById('soundBanner').style.display = 'none';
 }
 
 window.addEventListener('load', () => {
     if (!(ENABLE_CD_SPEECH_ALERT || ENABLE_CD_SPEECH_TIMESUP)) return;
-
-    // เช็ค Thai voice — Chrome โหลด async ต้องรอ voiceschanged
     _detectThaiVoice();
     speechSynthesis.addEventListener('voiceschanged', _detectThaiVoice);
-
-    // Safari หรือไม่มี Thai voice → ใช้ backend proxy → ต้องการ AudioContext unlock
+    // แสดง banner เสมอเพราะไม่รู้ว่า browser จะ block audio ไหม
+    // banner หายไปเองเมื่อ user กด
     setTimeout(() => {
-        if (_isSafari || !_cdThaiVoice) {
-            const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-            if (!AudioCtxClass) return;
-            const testCtx = new AudioCtxClass();
-            if (testCtx.state === 'suspended') {
-                document.getElementById('soundBanner').style.display = 'block';
-            }
-            testCtx.close();
-        }
-    }, 1000);
+        document.getElementById('soundBanner').style.display = 'block';
+    }, 500);
 });
 const container = document.getElementById('timerContainer');
 const summaryContainer = document.getElementById('summaryContainer');
@@ -1263,7 +1245,7 @@ function speakThai(textFn, type = 'alert') {
     if (!_cdAudioBusy) _cdPlayNext();
 }
 
-async function _cdPlayNext() {
+function _cdPlayNext() {
     if (!_cdAudioQueue.length) { _cdAudioBusy = false; return; }
     _cdAudioBusy = true;
     const text = _cdAudioQueue.shift()();
@@ -1280,22 +1262,13 @@ async function _cdPlayNext() {
         return;
     }
 
-    // ทาง 2: ไม่มี Thai voice → ใช้ backend proxy
-    if (!_cdAudioCtx) { _cdAudioBusy = false; return; }
-    try {
-        if (_cdAudioCtx.state === 'suspended') await _cdAudioCtx.resume();
-        const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}`;
-        const res = await fetch(url);
-        const buf = await res.arrayBuffer();
-        const audioBuf = await _cdAudioCtx.decodeAudioData(buf);
-        const src = _cdAudioCtx.createBufferSource();
-        src.buffer = audioBuf;
-        src.connect(_cdAudioCtx.destination);
-        src.onended = _cdPlayNext;
-        src.start(0);
-    } catch(e) {
-        _cdPlayNext();
-    }
+    // ทาง 2: ใช้ backend proxy ผ่าน Audio element ที่ unlock แล้ว
+    if (!_cdAudio) { _cdAudioBusy = false; return; }
+    const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}`;
+    _cdAudio.src = url;
+    _cdAudio.onended = _cdPlayNext;
+    _cdAudio.onerror = _cdPlayNext;
+    _cdAudio.play().catch(_cdPlayNext);
 }
 
 function showCdAlertToast(timer) {
