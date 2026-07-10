@@ -11,6 +11,17 @@ let _cdModalTimerId = null;
 let _cdModalMode = 'start';
 let _cdAudioQueue = [];
 let _cdAudioBusy = false;
+let _cdAudioCtx = null;
+
+function _initAudioCtx() {
+    if (_cdAudioCtx) {
+        if (_cdAudioCtx.state === 'suspended') _cdAudioCtx.resume();
+        return;
+    }
+    _cdAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+document.addEventListener('click', _initAudioCtx);
+document.addEventListener('touchstart', _initAudioCtx);
 const container = document.getElementById('timerContainer');
 const summaryContainer = document.getElementById('summaryContainer');
 const nameContainer = document.getElementById('nameInputs');
@@ -1218,16 +1229,26 @@ function speakThai(textFn, type = 'alert') {
     if (!_cdAudioBusy) _cdPlayNext();
 }
 
-function _cdPlayNext() {
+async function _cdPlayNext() {
     if (!_cdAudioQueue.length) { _cdAudioBusy = false; return; }
     _cdAudioBusy = true;
     const text = _cdAudioQueue.shift()();
     if (!text) { _cdPlayNext(); return; }
-    const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}`;
-    const audio = new Audio(url);
-    audio.onended = _cdPlayNext;
-    audio.onerror = _cdPlayNext;
-    audio.play().catch(_cdPlayNext);
+    if (!_cdAudioCtx) { _cdAudioBusy = false; return; }
+    try {
+        if (_cdAudioCtx.state === 'suspended') await _cdAudioCtx.resume();
+        const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}`;
+        const res = await fetch(url);
+        const buf = await res.arrayBuffer();
+        const audioBuf = await _cdAudioCtx.decodeAudioData(buf);
+        const src = _cdAudioCtx.createBufferSource();
+        src.buffer = audioBuf;
+        src.connect(_cdAudioCtx.destination);
+        src.onended = _cdPlayNext;
+        src.start(0);
+    } catch(e) {
+        _cdPlayNext();
+    }
 }
 
 function showCdAlertToast(timer) {
