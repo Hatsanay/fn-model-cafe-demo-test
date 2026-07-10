@@ -38,13 +38,26 @@ function _createSilentWavUrl() {
     return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
 }
 
-function unlockAudio() {
+let _cdLastUnlock = 0;
+
+function _doUnlock() {
     if (!_cdAudio) _cdAudio = document.createElement('audio');
     const url = _createSilentWavUrl();
     _cdAudio.src = url;
     const p = _cdAudio.play();
     if (p) p.catch(() => {}).then(() => setTimeout(() => URL.revokeObjectURL(url), 200));
+    _cdLastUnlock = Date.now();
+}
+
+function unlockAudio() {
+    _doUnlock();
     document.getElementById('soundBanner').style.display = 'none';
+}
+
+function _refreshAudioUnlock() {
+    if (!_cdAudio) return; // ยังไม่ได้กด banner ครั้งแรก
+    if (Date.now() - _cdLastUnlock < 10000) return; // re-unlock ทุก 10 วิ
+    _doUnlock();
 }
 
 window.addEventListener('load', () => {
@@ -54,6 +67,10 @@ window.addEventListener('load', () => {
     setTimeout(() => {
         document.getElementById('soundBanner').style.display = 'block';
     }, 500);
+
+    // re-unlock ทุกครั้งที่ user แตะ/คลิก เพื่อไม่ให้ unlock expire (~30 วิ)
+    document.addEventListener('click', _refreshAudioUnlock);
+    document.addEventListener('touchstart', _refreshAudioUnlock);
 });
 const container = document.getElementById('timerContainer');
 const summaryContainer = document.getElementById('summaryContainer');
