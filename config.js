@@ -3,8 +3,8 @@
 // =============================================================================
 
 // ─── API ──────────────────────────────────────────────────────────────────────
-// const API_BASE = 'http://localhost:3000/api/v1'
-const API_BASE = 'https://fnmodelbackend.dktimeh.com/api/v1'
+const API_BASE = 'http://localhost:3000/api/v1'
+// const API_BASE = 'https://fnmodelbackend.dktimeh.com/api/v1'
 
 // ─── อัตราสะสมแต้ม ────────────────────────────────────────────────────────────
 // แต้มที่ได้ = Math.floor(ยอดชำระ × POINT_PER_BAHT)

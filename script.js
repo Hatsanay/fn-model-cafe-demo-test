@@ -1223,11 +1223,11 @@ function _cdPlayNext() {
     _cdAudioBusy = true;
     const text = _cdAudioQueue.shift()();
     if (!text) { _cdPlayNext(); return; }
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'th-TH';
-    utter.onend = _cdPlayNext;
-    utter.onerror = _cdPlayNext;
-    speechSynthesis.speak(utter);
+    const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}`;
+    const audio = new Audio(url);
+    audio.onended = _cdPlayNext;
+    audio.onerror = _cdPlayNext;
+    audio.play().catch(_cdPlayNext);
 }
 
 function showCdAlertToast(timer) {
