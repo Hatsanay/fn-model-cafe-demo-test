@@ -42,8 +42,8 @@ function unlockAudio() {
     if (!_cdAudio) _cdAudio = document.createElement('audio');
     const url = _createSilentWavUrl();
     _cdAudio.src = url;
-    _cdAudio.play().finally ? _cdAudio.play().finally(() => URL.revokeObjectURL(url))
-                             : _cdAudio.play().then(() => URL.revokeObjectURL(url)).catch(() => URL.revokeObjectURL(url));
+    const p = _cdAudio.play();
+    if (p) p.catch(() => {}).then(() => setTimeout(() => URL.revokeObjectURL(url), 200));
     document.getElementById('soundBanner').style.display = 'none';
 }
 
@@ -1279,15 +1279,19 @@ function _cdPlayNext() {
         return;
     }
 
-    // ทาง 2: ใช้ backend proxy ผ่าน Audio element ที่ unlock แล้ว
+    // ทาง 2: backend proxy → fetch เป็น blob ก่อนแล้วค่อย play (iOS reliable)
     if (!_cdAudio) { _cdAudioBusy = false; return; }
-    const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}`;
-    _cdAudio.pause();
-    _cdAudio.src = url;
-    _cdAudio.load();
-    _cdAudio.addEventListener('ended', _cdPlayNext, { once: true });
-    _cdAudio.addEventListener('error', _cdPlayNext, { once: true });
-    _cdAudio.play().catch(() => _cdPlayNext());
+    fetch(`${API_BASE}/tts?text=${encodeURIComponent(text)}`)
+        .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+        .then(blob => {
+            const blobUrl = URL.createObjectURL(blob);
+            _cdAudio.src = blobUrl;
+            const cleanup = () => URL.revokeObjectURL(blobUrl);
+            _cdAudio.addEventListener('ended', () => { cleanup(); _cdPlayNext(); }, { once: true });
+            _cdAudio.addEventListener('error', () => { cleanup(); _cdPlayNext(); }, { once: true });
+            _cdAudio.play().catch(() => { cleanup(); _cdPlayNext(); });
+        })
+        .catch(() => _cdPlayNext());
 }
 
 function showCdAlertToast(timer) {
