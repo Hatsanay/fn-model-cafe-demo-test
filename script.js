@@ -12,6 +12,7 @@ let _cdModalMode = 'start';
 let _cdAudioQueue = [];
 let _cdAudioBusy = false;
 let _cdAudioCtx = null;
+let _cdThaiVoice = null;   // null = ยังไม่ได้เช็ค, false = ไม่มี, SpeechSynthesisVoice = มี
 
 function _initAudioCtx() {
     if (_cdAudioCtx) {
@@ -22,6 +23,38 @@ function _initAudioCtx() {
 }
 document.addEventListener('click', _initAudioCtx);
 document.addEventListener('touchstart', _initAudioCtx);
+
+function _detectThaiVoice() {
+    const voices = speechSynthesis.getVoices();
+    const thai = voices.find(v => v.lang.startsWith('th'));
+    _cdThaiVoice = thai || false;
+}
+
+function unlockAudio() {
+    _initAudioCtx();
+    document.getElementById('soundBanner').style.display = 'none';
+}
+
+window.addEventListener('load', () => {
+    if (!(ENABLE_CD_SPEECH_ALERT || ENABLE_CD_SPEECH_TIMESUP)) return;
+
+    // เช็ค Thai voice — Chrome โหลด async ต้องรอ voiceschanged
+    _detectThaiVoice();
+    speechSynthesis.addEventListener('voiceschanged', _detectThaiVoice);
+
+    // ถ้าไม่มี Thai voice ต้องใช้ backend proxy → ต้องการ AudioContext unlock
+    setTimeout(() => {
+        if (!_cdThaiVoice) {
+            const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtxClass) return;
+            const testCtx = new AudioCtxClass();
+            if (testCtx.state === 'suspended') {
+                document.getElementById('soundBanner').style.display = 'block';
+            }
+            testCtx.close();
+        }
+    }, 1000); // รอให้ voiceschanged fire ก่อน
+});
 const container = document.getElementById('timerContainer');
 const summaryContainer = document.getElementById('summaryContainer');
 const nameContainer = document.getElementById('nameInputs');
@@ -1234,6 +1267,19 @@ async function _cdPlayNext() {
     _cdAudioBusy = true;
     const text = _cdAudioQueue.shift()();
     if (!text) { _cdPlayNext(); return; }
+
+    // ทาง 1: มี Thai voice → ใช้ Web Speech API
+    if (_cdThaiVoice) {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.voice = _cdThaiVoice;
+        utter.lang = 'th-TH';
+        utter.onend = _cdPlayNext;
+        utter.onerror = _cdPlayNext;
+        speechSynthesis.speak(utter);
+        return;
+    }
+
+    // ทาง 2: ไม่มี Thai voice → ใช้ backend proxy
     if (!_cdAudioCtx) { _cdAudioBusy = false; return; }
     try {
         if (_cdAudioCtx.state === 'suspended') await _cdAudioCtx.resume();
