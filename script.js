@@ -1223,11 +1223,11 @@ function _cdPlayNext() {
     _cdAudioBusy = true;
     const text = _cdAudioQueue.shift()();
     if (!text) { _cdPlayNext(); return; }
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=th&client=tw-ob`;
-    const audio = new Audio(url);
-    audio.onended = _cdPlayNext;
-    audio.onerror = _cdPlayNext;
-    audio.play().catch(_cdPlayNext);
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'th-TH';
+    utter.onend = _cdPlayNext;
+    utter.onerror = _cdPlayNext;
+    speechSynthesis.speak(utter);
 }
 
 function showCdAlertToast(timer) {
