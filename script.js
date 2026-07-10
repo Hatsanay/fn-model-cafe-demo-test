@@ -11,10 +11,9 @@ let _cdModalTimerId = null;
 let _cdModalMode = 'start';
 let _cdAudioQueue = [];
 let _cdAudioBusy = false;
-let _cdAudio = null;       // Audio element ที่ unlock แล้ว (สำหรับ backend proxy)
-let _cdThaiVoice = null;   // null = ยังไม่เช็ค, false = ไม่มี, SpeechSynthesisVoice = มี
+let _cdAudio = null;
+let _cdThaiVoice = null;
 const _isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-const _SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAAACABAAZGF0YQAAAAA=';
 
 function _detectThaiVoice() {
     const thai = speechSynthesis.getVoices().find(v => v.lang.startsWith('th'));
@@ -22,9 +21,25 @@ function _detectThaiVoice() {
 }
 
 function unlockAudio() {
-    if (!_cdAudio) _cdAudio = new Audio();
-    _cdAudio.src = _SILENT;
+    // สร้าง silence ผ่าน AudioContext (1 sample) เพื่อ unlock Safari อย่างแท้จริง
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) {
+            const ctx = new AC();
+            const buf = ctx.createBuffer(1, 1, 22050);
+            const src = ctx.createBufferSource();
+            src.buffer = buf;
+            src.connect(ctx.destination);
+            src.start(0);
+            ctx.close();
+        }
+    } catch(e) {}
+
+    // สร้าง Audio element และ unlock ด้วย
+    if (!_cdAudio) _cdAudio = document.createElement('audio');
+    _cdAudio.src = '';
     _cdAudio.play().catch(() => {});
+
     document.getElementById('soundBanner').style.display = 'none';
 }
 
@@ -32,8 +47,6 @@ window.addEventListener('load', () => {
     if (!(ENABLE_CD_SPEECH_ALERT || ENABLE_CD_SPEECH_TIMESUP)) return;
     _detectThaiVoice();
     speechSynthesis.addEventListener('voiceschanged', _detectThaiVoice);
-    // แสดง banner เสมอเพราะไม่รู้ว่า browser จะ block audio ไหม
-    // banner หายไปเองเมื่อ user กด
     setTimeout(() => {
         document.getElementById('soundBanner').style.display = 'block';
     }, 500);
@@ -1265,10 +1278,12 @@ function _cdPlayNext() {
     // ทาง 2: ใช้ backend proxy ผ่าน Audio element ที่ unlock แล้ว
     if (!_cdAudio) { _cdAudioBusy = false; return; }
     const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}`;
+    _cdAudio.pause();
     _cdAudio.src = url;
-    _cdAudio.onended = _cdPlayNext;
-    _cdAudio.onerror = _cdPlayNext;
-    _cdAudio.play().catch(_cdPlayNext);
+    _cdAudio.load();
+    _cdAudio.addEventListener('ended', _cdPlayNext, { once: true });
+    _cdAudio.addEventListener('error', _cdPlayNext, { once: true });
+    _cdAudio.play().catch(() => _cdPlayNext());
 }
 
 function showCdAlertToast(timer) {
