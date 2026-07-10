@@ -180,7 +180,10 @@
 
     
     <div class="report-section">
-        <button class="btn-monthly-report" onclick="openMonthlyReportPage()">📊 ดูรายงานสรุปรายเดือน</button>
+        <div class="report-btn-group">
+            <button class="btn-monthly-report" onclick="openMonthlyReportPage()">📊 ดูรายงานสรุปรายเดือน</button>
+            <button class="btn-monthly-report btn-clear-report" onclick="clearReportData()">ล้าง</button>
+        </div>
 
         <div class="report-header">ลูกค้าทั้งหมด <span id="totalClients">0</span> โต๊ะ</div>
         <div class="report-row">

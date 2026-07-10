@@ -520,6 +520,13 @@ function resetFullReport() {
     openExpenseModal();
 }
 
+function clearReportData() {
+    if (!confirm('ล้างข้อมูลสรุปยอดทั้งหมดใช่หรือไม่?')) return;
+    reportData = { totalClients: 0, countA: 0, countB: 0, countC: 0, incomeA: 0, incomeB: 0, incomeC: 0, totalTimeMs: 0, grandTotal: 0, cashTotal: 0, transferTotal: 0 };
+    saveData();
+    updateReportUI();
+}
+
 function openExpenseModal() {
     document.getElementById('modalIncome').textContent = reportData.grandTotal.toLocaleString();
     renderExpenseList();
