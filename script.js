@@ -13,7 +13,9 @@ let _cdAudioQueue = [];
 let _cdAudioBusy = false;
 let _cdAudio = null;
 let _cdThaiVoice = null;
-const _isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+const _isIOS = /iP(hone|ad|od)/i.test(navigator.userAgent) ||
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const _isSafari = _isIOS || /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
 function _detectThaiVoice() {
     const thai = speechSynthesis.getVoices().find(v => v.lang.startsWith('th'));
