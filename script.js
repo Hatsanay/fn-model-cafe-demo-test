@@ -4,6 +4,7 @@ let transactionLogs = JSON.parse(localStorage.getItem('fn_logs')) || [];
 let monthlyHistory = JSON.parse(localStorage.getItem('fn_monthly_history')) || [];
 let timers = [];
 let dailyExpenses = [];
+let expensePayType = 'cash';   // ประเภทการจ่ายของรายการรายจ่ายถัดไป: 'cash' | 'transfer'
 let basket = [];
 let basketPayType = null;
 let cdPackages = [];
@@ -529,10 +530,19 @@ function clearReportData() {
 
 function openExpenseModal() {
     document.getElementById('modalIncome').textContent = reportData.grandTotal.toLocaleString();
+    document.getElementById('modalCashIncome').textContent = (reportData.cashTotal || 0).toLocaleString();
+    document.getElementById('modalTransferIncome').textContent = (reportData.transferTotal || 0).toLocaleString();
+    selectExpensePayType('cash');
     renderExpenseList();
     updateModalSummary();
     document.getElementById('expenseModal').style.display = 'flex';
     setTimeout(() => document.getElementById('expenseName').focus(), 100);
+}
+
+function selectExpensePayType(type) {
+    expensePayType = type;
+    document.getElementById('expenseCashBtn').className     = 'btn-pay-type' + (type === 'cash' ? ' active-cash' : '');
+    document.getElementById('expenseTransferBtn').className = 'btn-pay-type' + (type === 'transfer' ? ' active-transfer' : '');
 }
 
 function closeExpenseModal() {
@@ -546,7 +556,7 @@ function addExpense() {
     const amount = parseFloat(amountEl.value);
     if (!name) { alert('กรุณากรอกชื่อรายการ'); nameEl.focus(); return; }
     if (!amount || amount <= 0) { alert('กรุณากรอกจำนวนเงินที่ถูกต้อง'); amountEl.focus(); return; }
-    dailyExpenses.push({ name, amount });
+    dailyExpenses.push({ name, amount, payType: expensePayType });
     nameEl.value = ''; amountEl.value = '';
     nameEl.focus();
     renderExpenseList(); updateModalSummary();
@@ -561,6 +571,7 @@ function editExpense(index) {
     const item = dailyExpenses[index];
     document.getElementById('expenseName').value = item.name;
     document.getElementById('expenseAmount').value = item.amount;
+    selectExpensePayType(item.payType === 'transfer' ? 'transfer' : 'cash');
     dailyExpenses.splice(index, 1);
     renderExpenseList(); updateModalSummary();
     document.getElementById('expenseName').focus();
@@ -572,29 +583,53 @@ function renderExpenseList() {
         list.innerHTML = '<div style="color:#555; text-align:center; padding:10px; font-style:italic;">ยังไม่มีรายการรายจ่าย</div>';
         return;
     }
-    list.innerHTML = dailyExpenses.map((item, i) => `
+    list.innerHTML = dailyExpenses.map((item, i) => {
+        const badge = item.payType === 'transfer'
+            ? '<span class="badge badge-transfer">เงินโอน</span>'
+            : '<span class="badge badge-cash">เงินสด</span>';
+        return `
                 <div class="expense-item">
-                    <span class="expense-item-name">${i + 1}. ${item.name}</span>
+                    <span class="expense-item-name">${i + 1}. ${item.name} ${badge}</span>
                     <span class="expense-item-amount">${item.amount.toLocaleString()} บาท</span>
                     <button style="background:#f57c00;color:white;padding:4px 8px;font-size:0.75rem;min-height:auto;" onclick="editExpense(${i})">แก้ไข</button>
                     <button style="background:#c62828;color:white;padding:4px 8px;font-size:0.75rem;min-height:auto;margin-left:4px;" onclick="deleteExpense(${i})">ลบ</button>
                 </div>
-            `).join('');
+            `;
+    }).join('');
 }
 
 function updateModalSummary() {
-    const totalExp = dailyExpenses.reduce((s, e) => s + e.amount, 0);
-    const net = reportData.grandTotal - totalExp;
+    const cashExp     = dailyExpenses.filter(e => e.payType !== 'transfer').reduce((s, e) => s + e.amount, 0);
+    const transferExp = dailyExpenses.filter(e => e.payType === 'transfer').reduce((s, e) => s + e.amount, 0);
+    const totalExp    = cashExp + transferExp;
+
+    const netCash     = (reportData.cashTotal || 0)     - cashExp;
+    const netTransfer = (reportData.transferTotal || 0) - transferExp;
+    const netProfit   = reportData.grandTotal - totalExp;
+
+    document.getElementById('expCashDisplay').textContent      = cashExp.toLocaleString();
+    document.getElementById('expTransferDisplay').textContent  = transferExp.toLocaleString();
     document.getElementById('totalExpenseDisplay').textContent = totalExp.toLocaleString();
-    const netEl = document.getElementById('netProfitDisplay');
-    netEl.textContent = net.toLocaleString();
-    netEl.style.color = net >= 0 ? '#00e676' : '#ff5252';
+
+    const paint = (id, val) => {
+        const el = document.getElementById(id);
+        el.textContent = val.toLocaleString();
+        el.style.color = val >= 0 ? '#00e676' : '#ff5252';
+    };
+    paint('netCashDisplay', netCash);
+    paint('netTransferDisplay', netTransfer);
+    paint('netProfitDisplay', netProfit);
 }
 
 function confirmDailyClose() {
     if (!confirm('ยืนยันปิดยอดรายวันและบันทึกเข้ารายงานรายเดือนใช่หรือไม่?')) return;
-    const totalExpenses = dailyExpenses.reduce((s, e) => s + e.amount, 0);
+    const cashExpenses     = dailyExpenses.filter(e => e.payType !== 'transfer').reduce((s, e) => s + e.amount, 0);
+    const transferExpenses = dailyExpenses.filter(e => e.payType === 'transfer').reduce((s, e) => s + e.amount, 0);
+    const totalExpenses = cashExpenses + transferExpenses;
     const netProfit = reportData.grandTotal - totalExpenses;
+    // เงินสด/เงินโอน สุทธิของวันนี้ = รายได้ประเภทนั้น − รายจ่ายประเภทนั้น (ติดลบได้)
+    const dayCashNet     = (reportData.cashTotal || 0)     - cashExpenses;
+    const dayTransferNet = (reportData.transferTotal || 0) - transferExpenses;
     if (reportData.grandTotal > 0 || dailyExpenses.length > 0) {
         const today = new Date();
         const dateStr = today.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -609,7 +644,7 @@ function confirmDailyClose() {
                 totalClients: ex.totalClients + reportData.totalClients,
                 countA: ex.countA + reportData.countA, countB: ex.countB + reportData.countB, countC: ex.countC + reportData.countC,
                 incomeA: ex.incomeA + reportData.incomeA, incomeB: ex.incomeB + reportData.incomeB, incomeC: ex.incomeC + reportData.incomeC,
-                cashTotal: ex.cashTotal + reportData.cashTotal, transferTotal: ex.transferTotal + reportData.transferTotal,
+                cashTotal: ex.cashTotal + dayCashNet, transferTotal: ex.transferTotal + dayTransferNet,
                 grandTotal: mergedGrand,
                 expenses: mergedExpenses,
                 totalExpenses: mergedTotalExpenses,
@@ -622,7 +657,7 @@ function confirmDailyClose() {
                 totalClients: reportData.totalClients,
                 countA: reportData.countA, countB: reportData.countB, countC: reportData.countC,
                 incomeA: reportData.incomeA, incomeB: reportData.incomeB, incomeC: reportData.incomeC,
-                cashTotal: reportData.cashTotal, transferTotal: reportData.transferTotal,
+                cashTotal: dayCashNet, transferTotal: dayTransferNet,
                 grandTotal: reportData.grandTotal,
                 expenses: [...dailyExpenses],
                 totalExpenses,
@@ -659,45 +694,77 @@ window.clearMonthlyHistory = function () {
 function openMonthlyReportPage() {
     const reportWindow = window.open("", "_blank");
     const historyData = JSON.parse(localStorage.getItem('fn_monthly_history')) || [];
-    historyData.sort((a, b) => b.timestamp - a.timestamp);
+    historyData.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const N = v => Number(v) || 0;   // กันค่า undefined/NaN จากข้อมูลเก่า
+
+    // แยกยอดเงินสด/เงินโอน เป็น "รับจริง" (ก่อนหักรายจ่าย) และ "หักรายจ่ายแล้ว" ให้สอดคล้องกันทุกแถว
+    // แถวใหม่: cashTotal/transferTotal ที่เก็บไว้ = ค่าหักรายจ่ายแล้ว → บวกรายจ่ายประเภทนั้นกลับเพื่อได้รับจริง
+    // แถวเก่า (ไม่มี payType): cashTotal/transferTotal ที่เก็บไว้ = รับจริง → หักรายจ่าย (นับเป็นเงินสดทั้งหมด) เพื่อได้ค่าสุทธิ
+    const rowMetrics = item => {
+        const exp = item.expenses || [];
+        const typed = exp.some(e => e.payType);
+        const cashExp     = exp.filter(e => e.payType !== 'transfer').reduce((s, e) => s + N(e.amount), 0);
+        const transferExp = exp.filter(e => e.payType === 'transfer').reduce((s, e) => s + N(e.amount), 0);
+        const grossCash     = typed ? N(item.cashTotal) + cashExp     : N(item.cashTotal);
+        const grossTransfer = typed ? N(item.transferTotal) + transferExp : N(item.transferTotal);
+        return {
+            cashExp, transferExp,
+            grossCash, grossTransfer,
+            netCash: grossCash - cashExp,
+            netTransfer: grossTransfer - transferExp
+        };
+    };
 
     let rowsHTML = historyData.map(item => {
+        const gt = N(item.grandTotal);
+        const totExp = N(item.totalExpenses);
+        const m = rowMetrics(item);
         const expHtml = (item.expenses && item.expenses.length > 0)
-            ? item.expenses.map(e => e.name + ': ' + e.amount.toLocaleString() + ' บาท').join('<br>') + '<br><strong style="color:#c62828;">(รวม ' + (item.totalExpenses || 0).toLocaleString() + ' บาท)</strong>'
+            ? item.expenses.map(e => (e.name || '-') + ' (' + (e.payType === 'transfer' ? 'เงินโอน' : 'เงินสด') + '): ' + N(e.amount).toLocaleString() + ' บาท').join('<br>')
+              + '<div style="text-align:right; color:#e0a400; font-weight:bold; margin-top:3px;">รวมรายจ่ายเงินสด: ' + m.cashExp.toLocaleString() + ' บาท</div>'
+              + '<div style="text-align:right; color:#e0a400; font-weight:bold;">รวมรายจ่ายเงินโอน: ' + m.transferExp.toLocaleString() + ' บาท</div>'
+              + '<div style="text-align:right; color:#c62828; font-weight:bold; margin-top:2px;">(รวม ' + totExp.toLocaleString() + ' บาท)</div>'
             : '<span style="color:#999;">-</span>';
-        const netP = item.netProfit !== undefined ? item.netProfit : item.grandTotal;
+        const netP = item.netProfit !== undefined ? N(item.netProfit) : (gt - totExp);
         return `
                 <tr>
-                    <td>${item.date}</td>
-                    <td class="num">${item.totalClients}</td>
-                    <td class="num font-green">${item.grandTotal.toLocaleString()}</td>
-                    <td class="num">${item.countA}</td>
-                    <td class="num">${item.incomeA.toLocaleString()}</td>
-                    <td class="num">${item.countB}</td>
-                    <td class="num">${item.incomeB.toLocaleString()}</td>
-                    <td class="num">${item.countC}</td>
-                    <td class="num">${item.incomeC.toLocaleString()}</td>
-                    <td class="num font-blue">${item.cashTotal.toLocaleString()}</td>
-                    <td class="num font-orange">${item.transferTotal.toLocaleString()}</td>
-                    <td style="font-size:0.8rem; text-align:left; line-height:1.7; min-width:160px;">${expHtml}</td>
+                    <td>${item.date || '-'}</td>
+                    <td class="num">${N(item.countA)}</td>
+                    <td class="num">${N(item.incomeA).toLocaleString()}</td>
+                    <td class="num">${N(item.countB)}</td>
+                    <td class="num">${N(item.incomeB).toLocaleString()}</td>
+                    <td class="num">${N(item.countC)}</td>
+                    <td class="num">${N(item.incomeC).toLocaleString()}</td>
+                    <td class="num">${N(item.totalClients)}</td>
+                    <td class="num font-green">${gt.toLocaleString()}</td>
+                    <td class="num font-blue">${m.grossCash.toLocaleString()}</td>
+                    <td class="num font-orange">${m.grossTransfer.toLocaleString()}</td>
+                    <td style="font-size:0.78rem; text-align:left; line-height:1.6; min-width:150px;">${expHtml}</td>
+                    <td class="num" style="color:${m.netCash >= 0 ? '#0288d1' : '#c62828'}; font-weight:bold;">${m.netCash.toLocaleString()}</td>
+                    <td class="num" style="color:${m.netTransfer >= 0 ? '#e65100' : '#c62828'}; font-weight:bold;">${m.netTransfer.toLocaleString()}</td>
                     <td class="num" style="color:${netP >= 0 ? '#2e7d32' : '#c62828'}; font-weight:bold;">${netP.toLocaleString()}</td>
                 </tr>`;
     }).join('');
 
-    if (historyData.length === 0) { rowsHTML = `<tr><td colspan="13" class="empty">ยังไม่มีข้อมูลรายวันถูกบันทึกไว้ (ข้อมูลจะบันทึกเมื่อกดปุ่ม "รีเซ็ตยอดขายวันนี้")</td></tr>`; }
+    if (historyData.length === 0) { rowsHTML = `<tr><td colspan="15" class="empty">ยังไม่มีข้อมูลรายวันถูกบันทึกไว้ (ข้อมูลจะบันทึกเมื่อกดปุ่ม "รีเซ็ตยอดขายวันนี้")</td></tr>`; }
 
-    const sumGrand = historyData.reduce((sum, item) => sum + item.grandTotal, 0);
-    const sumClients = historyData.reduce((sum, item) => sum + item.totalClients, 0);
-    const sumcA = historyData.reduce((sum, item) => sum + item.countA, 0);
-    const sumiaA = historyData.reduce((sum, item) => sum + item.incomeA, 0);
-    const sumcB = historyData.reduce((sum, item) => sum + item.countB, 0);
-    const sumiaB = historyData.reduce((sum, item) => sum + item.incomeB, 0);
-    const sumcC = historyData.reduce((sum, item) => sum + item.countC, 0);
-    const sumiaC = historyData.reduce((sum, item) => sum + item.incomeC, 0);
-    const sumCash = historyData.reduce((sum, item) => sum + item.cashTotal, 0);
-    const sumTransfer = historyData.reduce((sum, item) => sum + item.transferTotal, 0);
-    const sumExpenses = historyData.reduce((sum, item) => sum + (item.totalExpenses || 0), 0);
-    const sumNetProfit = historyData.reduce((sum, item) => sum + (item.netProfit !== undefined ? item.netProfit : item.grandTotal), 0);
+    const sum = f => historyData.reduce((s, item) => s + N(f(item)), 0);
+    const sumGrand = sum(i => i.grandTotal);
+    const sumClients = sum(i => i.totalClients);
+    const sumcA = sum(i => i.countA);
+    const sumiaA = sum(i => i.incomeA);
+    const sumcB = sum(i => i.countB);
+    const sumiaB = sum(i => i.incomeB);
+    const sumcC = sum(i => i.countC);
+    const sumiaC = sum(i => i.incomeC);
+    const sumGrossCash     = sum(i => rowMetrics(i).grossCash);
+    const sumGrossTransfer = sum(i => rowMetrics(i).grossTransfer);
+    const sumCash     = sum(i => rowMetrics(i).netCash);
+    const sumTransfer = sum(i => rowMetrics(i).netTransfer);
+    const sumCashExp     = sum(i => rowMetrics(i).cashExp);
+    const sumTransferExp = sum(i => rowMetrics(i).transferExp);
+    const sumExpenses = sum(i => i.totalExpenses || 0);
+    const sumNetProfit = sum(i => i.netProfit !== undefined ? i.netProfit : (N(i.grandTotal) - N(i.totalExpenses)));
 
     reportWindow.document.write(`
                 <!DOCTYPE html>
@@ -706,23 +773,25 @@ function openMonthlyReportPage() {
                     <meta charset="UTF-8">
                     <title>รายงานสรุปยอดบัญชีรายวัน/รายเดือน - FN MODEL EXCAVATOR</title>
                     <style>
-                        body { font-family: 'Sarabun', 'Segoe UI', sans-serif; background-color: #ffffff; color: #333333; margin: 30px; }
-                        .header { text-align: center; margin-bottom: 30px; }
-                        .btn-container { display: flex; justify-content: space-between; margin-bottom: 20px; }
+                        @page { size: A4 landscape; margin: 10mm; }
+                        body { font-family: 'Sarabun', 'Segoe UI', sans-serif; background-color: #ffffff; color: #333333; margin: 24px; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .btn-container { display: flex; justify-content: space-between; margin-bottom: 16px; }
                         button { padding: 10px 20px; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; }
                         .btn-print { background-color: #2e7d32; color: white; }
                         .btn-clear { background-color: #c62828; color: white; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
-                        th { background-color: #f5f5f5; color: #333; padding: 12px 8px; border: 1px solid #dddddd; font-weight: bold; text-align: center; }
-                        td { padding: 10px 8px; border: 1px solid #dddddd; text-align: center; }
-                        tr:nth-child(even) { background-color: #f9f9f9; }
-                        .num { text-align: right; font-weight: bold; }
+                        .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.8rem; }
+                        th { background-color: #f5f5f5; color: #333; padding: 7px 5px; border: 1px solid #dddddd; font-weight: bold; text-align: center; }
+                        td { padding: 6px 5px; border: 1px solid #dddddd; text-align: center; }
+                        tbody tr:nth-child(even) { background-color: #f9f9f9; }
+                        .num { text-align: right; font-weight: bold; white-space: nowrap; }
                         .font-green { color: #2e7d32; }
                         .font-blue { color: #0288d1; }
                         .font-orange { color: #e65100; }
                         .total-row { background-color: #eaeff5 !important; font-weight: bold; }
                         .empty { padding: 30px; color: #999; font-style: italic; }
-                        @media print { .btn-container { display: none; } }
+                        @media print { .btn-container { display: none; } .table-wrap { overflow: visible; } }
                     </style>
                 </head>
                 <body>
@@ -734,18 +803,19 @@ function openMonthlyReportPage() {
                         <button class="btn-print" onclick="window.print()">🖨️ พิมพ์รายงาน / บันทึกเป็น PDF</button>
                         <button class="btn-clear" onclick="handleClearData()">🗑️ ล้างข้อมูลบัญชีทั้งหมด</button>
                     </div>
+                    <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
                                 <th rowspan="2">วันที่</th>
-                                <th rowspan="2">จำนวนลูกค้า<br>(โต๊ะ)</th>
-                                <th rowspan="2">รายได้ทั้งหมด<br>(บาท)</th>
                                 <th colspan="2">Class A</th>
                                 <th colspan="2">Class B</th>
                                 <th colspan="2">Class C</th>
-                                <th rowspan="2">เงินสด<br>(บาท)</th>
-                                <th rowspan="2">เงินโอน<br>(บาท)</th>
+                                <th rowspan="2">จำนวนลูกค้า<br>(โต๊ะ)</th>
+                                <th rowspan="2">รายได้ทั้งหมด<br>(บาท)</th>
+                                <th colspan="2">เงินรับจริง<br>(ก่อนหักรายจ่าย)</th>
                                 <th rowspan="2">รายจ่าย<br>(รายการ / รวมบาท)</th>
+                                <th colspan="2">คงเหลือ<br>(หักรายจ่ายแล้ว)</th>
                                 <th rowspan="2">กำไรสุทธิ<br>(บาท)</th>
                             </tr>
                             <tr>
@@ -755,27 +825,38 @@ function openMonthlyReportPage() {
                                 <th>รายได้</th>
                                 <th>จำนวนโต๊ะ</th>
                                 <th>รายได้</th>
+                                <th>เงินสด</th>
+                                <th>เงินโอน</th>
+                                <th>เงินสด</th>
+                                <th>เงินโอน</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${rowsHTML}
                             <tr class="total-row">
                                 <td>ยอดรวมสุทธิ</td>
-                                <td class="num">${sumClients}</td>
-                                <td class="num font-green">${sumGrand.toLocaleString()}</td>
                                 <td class="num">${sumcA}</td>
                                 <td class="num">${sumiaA.toLocaleString()}</td>
                                 <td class="num">${sumcB}</td>
                                 <td class="num">${sumiaB.toLocaleString()}</td>
                                 <td class="num">${sumcC}</td>
                                 <td class="num">${sumiaC.toLocaleString()}</td>
-                                <td class="num font-blue">${sumCash.toLocaleString()}</td>
-                                <td class="num font-orange">${sumTransfer.toLocaleString()}</td>
-                                <td class="num" style="color:#c62828; font-weight:bold;">${sumExpenses.toLocaleString()}</td>
+                                <td class="num">${sumClients}</td>
+                                <td class="num font-green">${sumGrand.toLocaleString()}</td>
+                                <td class="num font-blue">${sumGrossCash.toLocaleString()}</td>
+                                <td class="num font-orange">${sumGrossTransfer.toLocaleString()}</td>
+                                <td class="num" style="font-weight:bold;">
+                                    <div style="color:#e0a400;">รวมรายจ่ายเงินสด: ${sumCashExp.toLocaleString()} บาท</div>
+                                    <div style="color:#e0a400;">รวมรายจ่ายเงินโอน: ${sumTransferExp.toLocaleString()} บาท</div>
+                                    <div style="color:#c62828; margin-top:2px;">(รวม ${sumExpenses.toLocaleString()} บาท)</div>
+                                </td>
+                                <td class="num" style="color:${sumCash >= 0 ? '#0288d1' : '#c62828'};">${sumCash.toLocaleString()}</td>
+                                <td class="num" style="color:${sumTransfer >= 0 ? '#e65100' : '#c62828'};">${sumTransfer.toLocaleString()}</td>
                                 <td class="num" style="color:${sumNetProfit >= 0 ? '#2e7d32' : '#c62828'}; font-weight:bold;">${sumNetProfit.toLocaleString()}</td>
                             </tr>
                         </tbody>
                     </table>
+                    </div>
                     <script>
                         function handleClearData() {
                             if(confirm('⚠ คำเตือน: คุณต้องการล้างข้อมูลรายงานสรุปบัญชีรายเดือนทั้งหมดใช่หรือไม่? (ข้อมูลจะหายถาวร)')) {

@@ -248,6 +248,11 @@
             <div
                 style="background:#111; border-radius:8px; padding:10px 15px; margin-bottom:15px; text-align:center; color:#aaa; font-size:0.95rem;">
                 รายได้วันนี้: <strong id="modalIncome" style="color:#00e676;">0</strong> บาท
+                <div style="margin-top:6px; font-size:0.85rem; color:#888;">
+                    💵 เงินสด <strong id="modalCashIncome" style="color:#4fc3f7;">0</strong>
+                    &nbsp;|&nbsp;
+                    📱 เงินโอน <strong id="modalTransferIncome" style="color:#ffb74d;">0</strong>
+                </div>
             </div>
             <div class="modal-input-row">
                 <input type="text" id="expenseName" placeholder="ชื่อรายการ (เช่น ค่ากาแฟ)"
@@ -257,13 +262,30 @@
                 <button onclick="addExpense()" style="background:#0288d1; color:white; white-space:nowrap;">+
                     เพิ่มรายการ</button>
             </div>
+            <div class="basket-pay-row" style="margin-bottom:15px;">
+                <button id="expenseCashBtn" class="btn-pay-type active-cash" onclick="selectExpensePayType('cash')">💵
+                    จ่ายเงินสด</button>
+                <button id="expenseTransferBtn" class="btn-pay-type" onclick="selectExpensePayType('transfer')">📱
+                    จ่ายเงินโอน</button>
+            </div>
             <div id="expenseList" class="expense-list">
                 <div style="color:#555; text-align:center; padding:10px; font-style:italic;">ยังไม่มีรายการรายจ่าย</div>
             </div>
             <div class="modal-summary">
-                รายจ่ายรวม: <span id="totalExpenseDisplay" style="color:#ff5252; font-weight:bold;">0</span> บาท
-                &nbsp;&nbsp;|&nbsp;&nbsp;
-                กำไรสุทธิ: <span id="netProfitDisplay" style="color:#00e676; font-weight:bold;">0</span> บาท
+                <div>
+                    รายจ่ายเงินสด: <span id="expCashDisplay" style="color:#ff5252; font-weight:bold;">0</span>
+                    &nbsp;|&nbsp;
+                    รายจ่ายเงินโอน: <span id="expTransferDisplay" style="color:#ff5252; font-weight:bold;">0</span>
+                    &nbsp;|&nbsp;
+                    รวม: <span id="totalExpenseDisplay" style="color:#ff5252; font-weight:bold;">0</span> บาท
+                </div>
+                <div style="margin-top:8px; border-top:1px solid #333; padding-top:8px;">
+                    เงินสดคงเหลือ: <span id="netCashDisplay" style="color:#00e676; font-weight:bold;">0</span>
+                    &nbsp;|&nbsp;
+                    เงินโอนคงเหลือ: <span id="netTransferDisplay" style="color:#00e676; font-weight:bold;">0</span>
+                    &nbsp;|&nbsp;
+                    กำไรสุทธิ: <span id="netProfitDisplay" style="color:#00e676; font-weight:bold;">0</span> บาท
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn-cancel-modal" onclick="closeExpenseModal()">ยกเลิก</button>
