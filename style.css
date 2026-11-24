@@ -876,6 +876,8 @@ button {
 .summary-title.drift { background-color: #1565c0; }
 .summary-title.idle.drift { background-color: #0d2a4a; color: #4fc3f7; }
 .summary-card.drift-summary { border-color: #1565c0; background: #161c24; }
+/* การ์ดสรุปรถดริฟใบแรกเริ่มที่คอลัมน์ 1 → ขึ้นบรรทัดใหม่ ไม่ต่อท้ายแถวรถตัก */
+.summary-card:not(.drift-summary) + .summary-card.drift-summary { grid-column-start: 1; }
 
 .badge-drift {
     background-color: #0277bd;
