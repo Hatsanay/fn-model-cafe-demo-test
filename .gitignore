@@ -1,3 +1,5 @@
 backend/
 deploy.bat
 deployDemoTest.bat
+CLAUDE.md
+dev/

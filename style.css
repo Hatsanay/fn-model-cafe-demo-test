@@ -833,6 +833,109 @@ button {
     animation: cd-blink-border 0.85s ease-in-out infinite;
 }
 
+/* ─── Section รถตัก / รถดริฟ ──────────────────────────────────────────────── */
+.section-title {
+    margin: 0;
+    color: #a5d6a7;
+    font-size: 1.1rem;
+}
+
+.section-title.drift { color: #4fc3f7; }
+
+/* หัว section (รถตัก / รถดริฟ): หัวข้ออยู่บน ปุ่มควบคุมอยู่ล่างชิดซ้าย */
+.section-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 15px;
+}
+
+.section-header .controls-top { margin-top: 0; }
+
+.drift-section-header {
+    margin-top: 10px;
+    padding-top: 20px;
+    border-top: 1px dashed #1565c0;
+}
+
+.drift-card { border-color: #1565c0; }
+
+.drift-badge {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 6px;
+    background: #0d1b2a;
+    color: #4fc3f7;
+    font-weight: bold;
+    border: 1px solid #1565c0;
+}
+
+/* การ์ดสรุปเงิน: รถดริฟ = กรอบ/หัวสีน้ำเงิน แยกจากรถตัก */
+.summary-title.idle { background-color: #333; }
+.summary-title.drift { background-color: #1565c0; }
+.summary-title.idle.drift { background-color: #0d2a4a; color: #4fc3f7; }
+.summary-card.drift-summary { border-color: #1565c0; background: #161c24; }
+
+.badge-drift {
+    background-color: #0277bd;
+    color: white;
+    white-space: nowrap;
+}
+
+/* ─── กล่องยอดรายวันแยกตามประเภทรถ ───────────────────────────────────────── */
+.vr-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 5px 0 10px;
+    text-align: left;
+}
+
+.vr-box {
+    background: #141414;
+    border: 1px solid #2e7d32;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.vr-box.drift { border-color: #1565c0; }
+
+.vr-title { font-weight: bold; font-size: 1.05rem; color: #a5d6a7; }
+.vr-box.drift .vr-title { color: #4fc3f7; }
+
+.vr-main {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: #00e676;
+    margin: 4px 0 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #333;
+}
+
+.vr-box.drift .vr-main { color: #4fc3f7; }
+
+.vr-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; color: #ddd; }
+.vr-table td { padding: 3px 0; }
+.vr-table td:nth-child(2), .vr-table td:nth-child(3) { text-align: right; }
+.vr-money { color: #00e676; font-weight: bold; }
+
+.vr-row { margin-top: 8px; font-size: 0.92rem; color: #aaa; }
+.vr-cash { color: #0288d1; font-weight: bold; }
+.vr-transfer { color: #f57c00; font-weight: bold; }
+
+.vr-shop-title {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px dashed #333;
+    font-size: 0.95rem;
+    color: #888;
+}
+
+@media (max-width: 600px) {
+    .vr-grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 600px) {
     body {
         margin: 10px;

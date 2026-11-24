@@ -1,6 +1,84 @@
 // config อยู่ใน config.js — โหลดก่อน script.js ใน index.html
-let reportData = JSON.parse(localStorage.getItem('fn_report')) || { totalClients: 0, countA: 0, countB: 0, countC: 0, incomeA: 0, incomeB: 0, incomeC: 0, totalTimeMs: 0, grandTotal: 0, cashTotal: 0, transferTotal: 0 };
+
+// ─── ประเภทรถ ────────────────────────────────────────────────────────────────
+// timer รถตัก id = 1..50, รถดริฟ id = 1001, 1002, ... (DRIFT_ID_BASE + ลำดับ)
+// รถดริฟมีแค่ Class B และใช้ราคาจาก DRIFT_CONFIG
+const DRIFT_ID_BASE = 1000;
+const isDrift = t => !!t && (t.vehicle === 'drift' || t.id > DRIFT_ID_BASE);
+const vehicleOf = t => isDrift(t) ? 'drift' : 'excavator';
+const pkgVehicle = p => p && p.package_vehicle_type === 'drift' ? 'drift' : 'excavator';
+const getRate = timer => isDrift(timer) ? DRIFT_CONFIG : CLASS_CONFIG[timer.activeClass];
+// key ใน reportData: รถตัก → A/B/C (countA, incomeA, ...), รถดริฟ → Drift (countDrift, incomeDrift)
+const reportKey = (vehicle, cls) => vehicle === 'drift' ? 'Drift' : cls;
+
+// เวลาเล่น/เงินสด/เงินโอน เก็บยอดรวมทั้งร้าน + ของรถดริฟ → ของรถตัก = รวม − รถดริฟ
+// (ข้อมูลเก่าก่อนมีรถดริฟ ไม่มีฟิลด์ดริฟ = 0 → ยอดทั้งหมดเป็นของรถตัก ถูกต้องโดยไม่ต้องแปลง)
+function emptyReport() {
+    return { totalClients: 0, countA: 0, countB: 0, countC: 0, incomeA: 0, incomeB: 0, incomeC: 0, countDrift: 0, incomeDrift: 0, totalTimeMs: 0, grandTotal: 0, cashTotal: 0, transferTotal: 0, timeDriftMs: 0, cashDrift: 0, transferDrift: 0 };
+}
+
+// ยอดแยกตามประเภทรถ (ใช้ทั้งกล่องยอดรายวันและแถวรายงานรายเดือน)
+function vehicleBreakdown(r) {
+    const N = v => Number(v) || 0;
+    const pos = v => Math.max(0, v);
+    return {
+        excavator: {
+            count: N(r.countA) + N(r.countB) + N(r.countC),
+            income: N(r.incomeA) + N(r.incomeB) + N(r.incomeC),
+            timeMs: pos(N(r.totalTimeMs) - N(r.timeDriftMs)),
+            cash: pos(N(r.cashTotal) - N(r.cashDrift)),
+            transfer: pos(N(r.transferTotal) - N(r.transferDrift)),
+        },
+        drift: {
+            count: N(r.countDrift), income: N(r.incomeDrift),
+            timeMs: N(r.timeDriftMs), cash: N(r.cashDrift), transfer: N(r.transferDrift),
+        },
+    };
+}
+
+const fmtHoursMins = ms => { const m = Math.floor((Number(ms) || 0) / 60000); return `${Math.floor(m / 60)} ชม. ${m % 60} นาที`; };
+
+// บวก (sign = 1) หรือหักคืน (sign = -1) 1 โต๊ะ/คัน ในยอดรายวัน
+// paid = ยอดที่รับจริง, income = ยอดที่นับเป็นรายได้ของ class/ประเภทรถ (ตาม REPORT_INCOME_AFTER_DISCOUNT)
+function applyToReport({ vehicle, cls, elapsed, paid, income, payType }, sign = 1) {
+    const k = reportKey(vehicle, cls);
+    const add = (field, v) => { reportData[field] = Math.max(0, (reportData[field] || 0) + sign * (v || 0)); };
+    add('totalClients', 1);
+    add('count' + k, 1);
+    add('income' + k, income);
+    add('totalTimeMs', elapsed);
+    add('grandTotal', paid);
+    if (payType === 'cash') add('cashTotal', paid);
+    else if (payType === 'transfer') add('transferTotal', paid);
+    if (vehicle === 'drift') {
+        add('timeDriftMs', elapsed);
+        if (payType === 'cash') add('cashDrift', paid);
+        else if (payType === 'transfer') add('transferDrift', paid);
+    }
+}
+
+let reportData = JSON.parse(localStorage.getItem('fn_report')) || emptyReport();
 let transactionLogs = JSON.parse(localStorage.getItem('fn_logs')) || [];
+
+// ยอดวันนี้ที่บันทึกก่อนมีฟิลด์ timeDriftMs/cashDrift/transferDrift → คำนวณย้อนจากประวัติรับเงิน
+// เอาเฉพาะรายการรถดริฟล่าสุด (log ใหม่อยู่หน้าสุด) เท่าจำนวน countDrift ของวันนี้ — log ไม่ถูกล้างตอนปิดยอด จึงต้องจำกัดจำนวน
+(function migrateDriftTotals() {
+    if (reportData.timeDriftMs !== undefined) return;
+    reportData.timeDriftMs = 0; reportData.cashDrift = 0; reportData.transferDrift = 0;
+    let left = reportData.countDrift || 0;
+    for (const log of transactionLogs) {
+        if (left <= 0) break;
+        const items = (log.isBasket && log.items) ? log.items : [log];
+        for (const it of items) {
+            if (left <= 0) break;
+            if (it.vehicle !== 'drift') continue;
+            reportData.timeDriftMs += it.elapsed || 0;
+            if (log.payType === 'cash') reportData.cashDrift += it.amount || 0;
+            else if (log.payType === 'transfer') reportData.transferDrift += it.amount || 0;
+            left--;
+        }
+    }
+})();
 let monthlyHistory = JSON.parse(localStorage.getItem('fn_monthly_history')) || [];
 let timers = [];
 let dailyExpenses = [];
@@ -77,6 +155,8 @@ const container = document.getElementById('timerContainer');
 const summaryContainer = document.getElementById('summaryContainer');
 const nameContainer = document.getElementById('nameInputs');
 const countInput = document.getElementById('timerCount');
+const driftContainer = document.getElementById('driftTimerContainer');
+const driftCountInput = document.getElementById('driftCount');
 
 function saveData() {
     localStorage.setItem('fn_timers', JSON.stringify(timers.map(t => ({ ...t, interval: null }))));
@@ -84,6 +164,14 @@ function saveData() {
     localStorage.setItem('fn_logs', JSON.stringify(transactionLogs));
     localStorage.setItem('fn_monthly_history', JSON.stringify(monthlyHistory));
     localStorage.setItem('fn_count', countInput.value);
+    localStorage.setItem('fn_drift_count', driftCountInput.value);
+}
+
+// ป้ายประเภทรถใน log (รถดริฟ = ป้าย "ดริฟ", รถตัก = ตัวอักษร class)
+function logClassCell(vehicle, cls) {
+    return vehicle === 'drift'
+        ? '<span class="badge badge-drift">ดริฟ</span>'
+        : `<span class="highlight">${cls}</span>`;
 }
 
 function renderLogs() {
@@ -98,7 +186,7 @@ function renderLogs() {
                         <tr class="log-sub-row">
                             <td style="padding-left:28px; color:#888; font-size:0.85rem;">↳ ${item.name}</td>
                             <td></td>
-                            <td><span class="highlight">${item.class}</span></td>
+                            <td>${logClassCell(item.vehicle, item.class)}</td>
                             <td>${item.minutes} นาที</td>
                             <td></td>
                             <td style="color:#00e676; font-weight:bold;">${(item.originalAmount || item.amount).toLocaleString()}.-</td>
@@ -133,7 +221,7 @@ function renderLogs() {
         }
         return `
                 <tr>
-                    <td>${log.time}</td><td>${log.name}</td><td><span class="highlight">${log.class}</span></td>
+                    <td>${log.time}</td><td>${log.name}</td><td>${logClassCell(log.vehicle, log.class)}</td>
                     <td>${log.duration} นาที</td><td>${payTypeBadge}</td><td style="color: #00e676; font-weight: bold;">${(log.amount || 0).toLocaleString()}.-</td>
                     <td style="text-align: center;"><button class="btn-delete-log" onclick="deleteLogEntry(${log.id})">🗑️</button></td>
                 </tr>`;
@@ -150,52 +238,84 @@ function toggleLogExpand(logId) {
     if (icon) icon.textContent = isOpen ? '▶' : '▼';
 }
 
-function createTimers(isLoad = false) {
-    const count = isLoad ? (localStorage.getItem('fn_count') || 8) : parseInt(countInput.value);
-    countInput.value = count; container.innerHTML = ''; summaryContainer.innerHTML = ''; nameContainer.innerHTML = '';
-    const savedTimers = JSON.parse(localStorage.getItem('fn_timers'));
-    timers.forEach(t => clearInterval(t.interval));
-    timers = [];
-    for (let i = 1; i <= count; i++) {
-        let timerObj;
-        if (isLoad && savedTimers && savedTimers[i - 1]) {
-            timerObj = savedTimers[i - 1];
-            if (timerObj.isRunning) {
-                timerObj.startTime = Date.now() - timerObj.elapsed;
-                timerObj.interval = setInterval(() => {
-                    timerObj.elapsed = Date.now() - timerObj.startTime;
-                    const el = document.getElementById(`display-${timerObj.id}`);
-                    if (el) {
-                        if (timerObj.cdPackage) {
-                            el.textContent = formatCdDisplay(timerObj);
-                            el.style.color = getCdColor(timerObj);
-                        } else {
-                            el.textContent = formatTime(timerObj.elapsed);
-                        }
-                    }
-                    if (timerObj.cdPackage) {
-                        checkCdAlert(timerObj);
-                        checkCdTimesUp(timerObj);
-                        const cardEl = document.getElementById(`card-${timerObj.id}`);
-                        if (cardEl) {
-                            const isOt = (timerObj.cdBaseSeconds || timerObj.cdPackage.package_seconds) * 1000 - timerObj.elapsed <= 0;
-                            cardEl.classList.toggle('cd-overtime-blink', isOt);
-                        }
-                    }
-                    saveData();
-                }, 100);
+function newTimer(id) {
+    const drift = id > DRIFT_ID_BASE;
+    const n = drift ? id - DRIFT_ID_BASE : id;
+    return { id, vehicle: drift ? 'drift' : 'excavator', name: drift ? `รถดริฟ ${n}` : `โต๊ะที่ ${n}`, startTime: 0, elapsed: 0, isRunning: false, isFinished: false, interval: null, activeClass: drift ? 'B' : null, summary: null, payType: null, orders: [] };
+}
+
+// ล้างสถานะ timer หลังชำระเงินแล้ว (รถดริฟกลับเป็น Class B เสมอ)
+function resetTimerState(timer) {
+    timer.isFinished = false; timer.summary = null; timer.elapsed = 0; timer.activeClass = isDrift(timer) ? 'B' : null; timer.payType = null; timer._phone = null; timer._balance = null; timer._usePoints = 0; timer._pointsInfo = null; timer.cdPackage = null; timer.cdAlerted = false; timer.cdTimesUp = false; timer.cdBaseSeconds = 0; timer.cdExtraPackages = [];
+}
+
+function _runTimerInterval(timer) {
+    timer.startTime = Date.now() - timer.elapsed;
+    timer.interval = setInterval(() => {
+        timer.elapsed = Date.now() - timer.startTime;
+        const el = document.getElementById(`display-${timer.id}`);
+        if (el) {
+            if (timer.cdPackage) {
+                el.textContent = formatCdDisplay(timer);
+                el.style.color = getCdColor(timer);
+            } else {
+                el.textContent = formatTime(timer.elapsed);
             }
-        } else { timerObj = { id: i, name: `โต๊ะที่ ${i}`, startTime: 0, elapsed: 0, isRunning: false, isFinished: false, interval: null, activeClass: null, summary: null, payType: null, orders: [] }; }
-        timers.push(timerObj);
-        const card = document.createElement('div'); card.id = `card-${i}`; card.className = 'timer-card';
-        const sCard = document.createElement('div'); sCard.id = `summary-card-${i}`; sCard.className = 'summary-card';
-        container.appendChild(card); summaryContainer.appendChild(sCard);
+        }
+        if (timer.cdPackage) {
+            checkCdAlert(timer);
+            checkCdTimesUp(timer);
+            const cardEl = document.getElementById(`card-${timer.id}`);
+            if (cardEl) {
+                const isOt = (timer.cdBaseSeconds || timer.cdPackage.package_seconds) * 1000 - timer.elapsed <= 0;
+                cardEl.classList.toggle('cd-overtime-blink', isOt);
+            }
+        }
+        saveData();
+    }, 100);
+}
+
+// สร้างการ์ดรถตัก (id 1..N) และรถดริฟ (id 1001..1000+M)
+// เปลี่ยนจำนวนแล้ว timer ที่ยังอยู่ในช่วงจะไม่ถูกล้าง (เล่นต่อได้) — ตัดเฉพาะตัวที่เกินจำนวนใหม่
+function createTimers(isLoad = false) {
+    const toCount = (v, min, def) => { const n = parseInt(v); return isNaN(n) ? def : Math.min(50, Math.max(min, n)); };
+    const exCount = toCount(isLoad ? (localStorage.getItem('fn_count') || 8) : countInput.value, 1, 8);
+    const drCount = toCount(isLoad ? (localStorage.getItem('fn_drift_count') ?? driftCountInput.value) : driftCountInput.value, 0, 4);
+    countInput.value = exCount; driftCountInput.value = drCount;
+    container.innerHTML = ''; driftContainer.innerHTML = ''; summaryContainer.innerHTML = ''; nameContainer.innerHTML = '';
+
+    const ids = [];
+    for (let i = 1; i <= exCount; i++) ids.push(i);
+    for (let i = 1; i <= drCount; i++) ids.push(DRIFT_ID_BASE + i);
+
+    const prev = isLoad ? (JSON.parse(localStorage.getItem('fn_timers')) || []) : timers;
+    if (!isLoad) {
+        timers.filter(t => !ids.includes(t.id)).forEach(t => clearInterval(t.interval));
+        basket = basket.filter(id => ids.includes(id));
+    }
+    timers = ids.map(id => {
+        const t = prev.find(p => p && p.id === id);
+        if (!t) return newTimer(id);
+        t.vehicle = id > DRIFT_ID_BASE ? 'drift' : 'excavator';
+        if (t.vehicle === 'drift' && !t.activeClass) t.activeClass = 'B';
+        if (isLoad) { t.interval = null; if (t.isRunning) _runTimerInterval(t); }
+        return t;
+    });
+
+    timers.forEach(timerObj => {
+        const id = timerObj.id;
+        const drift = isDrift(timerObj);
+        const card = document.createElement('div'); card.id = `card-${id}`; card.className = drift ? 'timer-card drift-card' : 'timer-card';
+        const sCard = document.createElement('div'); sCard.id = `summary-card-${id}`; sCard.className = drift ? 'summary-card drift-summary' : 'summary-card';
+        (drift ? driftContainer : container).appendChild(card); summaryContainer.appendChild(sCard);
         renderTimerCard(card, timerObj); renderSummaryCard(sCard, timerObj);
         const nameDiv = document.createElement('div');
-        nameDiv.innerHTML = `<label>[${i}]: </label><input type="text" value="${timerObj.name}" oninput="updateName(${i}, this.value)">`;
+        const label = drift ? `ดริฟ ${id - DRIFT_ID_BASE}` : id;
+        nameDiv.innerHTML = `<label>[${label}]: </label><input type="text" value="${timerObj.name}" oninput="updateName(${id}, this.value)">`;
         nameContainer.appendChild(nameDiv);
-    }
+    });
     updateReportUI(); renderLogs();
+    if (!isLoad) renderBasket();
 }
 
 function renderTimerCard(card, timer) {
@@ -211,7 +331,7 @@ function renderTimerCard(card, timer) {
         card.classList.toggle('cd-overtime-blink', isOvertime);
         card.innerHTML = `
             <div style="color:#888; font-size:0.9rem;">${timer.name}</div>
-            <div class="cd-badge">⏱ Class ${pkg.package_class} · ${fmtBadgePkgs(pkg, timer.cdExtraPackages || [])}</div>
+            <div class="cd-badge">⏱ ${isDrift(timer) ? 'รถดริฟ' : `Class ${pkg.package_class}`} · ${fmtBadgePkgs(pkg, timer.cdExtraPackages || [])}</div>
             <div class="timer-display" id="display-${timer.id}" style="color:${cdColor};">${formatCdDisplay(timer)}</div>
             <div style="font-size:0.75rem;color:${cdColor};text-align:center;margin-bottom:6px;">${statusText}</div>
             <div><button class="btn-stop" onclick="stopTimer(${timer.id})">หยุด</button></div>
@@ -229,7 +349,7 @@ function renderTimerCard(card, timer) {
         card.classList.toggle('cd-overtime-blink', isOvertime);
         card.innerHTML = `
             <div style="color:#888; font-size:0.9rem;">${timer.name}</div>
-            <div class="cd-badge">⏱ Class ${pkg.package_class} · ${fmtBadgePkgs(pkg, timer.cdExtraPackages || [])}</div>
+            <div class="cd-badge">⏱ ${isDrift(timer) ? 'รถดริฟ' : `Class ${pkg.package_class}`} · ${fmtBadgePkgs(pkg, timer.cdExtraPackages || [])}</div>
             <div class="timer-display" id="display-${timer.id}" style="color:${cdColor};">${formatCdDisplay(timer)}</div>
             <div style="font-size:0.75rem;color:${cdColor};text-align:center;margin-bottom:6px;">${isOvertime ? 'เกินเวลา' : 'หยุดชั่วคราว'}</div>
             <div class="button-group">
@@ -250,7 +370,10 @@ function renderTimerCard(card, timer) {
     const cdBtn = (!timer.isRunning && !timer.isFinished && timer.elapsed === 0)
         ? `<button class="btn-cd-main" onclick="openCdModal(${timer.id})">⏱ เหมาเวลา</button>`
         : '';
-    card.innerHTML = `<div style="color:#888; font-size:0.9rem;">${timer.name}</div><div class="timer-display" id="display-${timer.id}" style="${timer.isFinished ? 'color: #555;' : ''}">${formatTime(timer.elapsed)}</div><div>${buttonHTML}</div><div class="class-selector" style="${timer.isFinished ? 'pointer-events: none; opacity: 0.5;' : ''}">${['A', 'B', 'C'].map(c => `<div class="btn-class ${timer.activeClass === c ? 'active' : ''}" onclick="selectClass(${timer.id}, '${c}')">${c}</div>`).join('')}</div>${cdBtn}`;
+    const classHTML = isDrift(timer)
+        ? `<div class="drift-badge" style="${timer.isFinished ? 'opacity: 0.5;' : ''}">รถดริฟ · Class B</div>`
+        : `<div class="class-selector" style="${timer.isFinished ? 'pointer-events: none; opacity: 0.5;' : ''}">${['A', 'B', 'C'].map(c => `<div class="btn-class ${timer.activeClass === c ? 'active' : ''}" onclick="selectClass(${timer.id}, '${c}')">${c}</div>`).join('')}</div>`;
+    card.innerHTML = `<div style="color:#888; font-size:0.9rem;">${timer.name}</div><div class="timer-display" id="display-${timer.id}" style="${timer.isFinished ? 'color: #555;' : ''}">${formatTime(timer.elapsed)}</div><div>${buttonHTML}</div>${classHTML}${cdBtn}`;
 }
 
 function renderSummaryCard(card, timer) {
@@ -268,10 +391,11 @@ function renderSummaryCard(card, timer) {
             if (s.overtimeSecs > 0) _sumHTML += `<p>เล่นเกิน <span class="highlight" style="color:#ff9800;">${s.overtimeDisplay}</span> นาที &nbsp;·&nbsp; ราคา <span class="highlight" style="color:#ff9800;">${s.overtimeCost.toLocaleString()}</span> บาท</p>`;
             _sumHTML += `<p>ราคาที่ต้องชำระ <span class="highlight" id="total-display-${timer.id}" style="font-size:1.2rem;">${s.total.toLocaleString()}</span> บาท</p>`;
         } else {
-            _sumHTML = `<p>ใช้เวลาทั้งหมด <span class="highlight">${timer.summary.minutes}</span> นาที</p><p>Class <span class="highlight">${timer.summary.class}</span></p><p>ค่าเปิดโต๊ะ: <span class="highlight">${timer.summary.base}</span> บาท</p><p>ราคาทั้งหมด <span class="highlight" id="total-display-${timer.id}" style="font-size:1.2rem;">${timer.summary.total.toLocaleString()}</span> บาท</p>`;
+            const _classLine = isDrift(timer) ? `<p><span class="highlight">รถดริฟ</span></p>` : `<p>Class <span class="highlight">${timer.summary.class}</span></p>`;
+            _sumHTML = `<p>ใช้เวลาทั้งหมด <span class="highlight">${timer.summary.minutes}</span> นาที</p>${_classLine}<p>ค่าเปิดโต๊ะ: <span class="highlight">${timer.summary.base}</span> บาท</p><p>ราคาทั้งหมด <span class="highlight" id="total-display-${timer.id}" style="font-size:1.2rem;">${timer.summary.total.toLocaleString()}</span> บาท</p>`;
         }
         card.innerHTML = `
-                    <div class="summary-header-box"><div class="summary-title">${timer.name}</div><button class="btn-basket-toggle ${inBasket ? 'in-basket' : ''}" onclick="toggleBasket(${timer.id})">${inBasket ? '✓ อยู่ในตะกร้า' : '🛒 เพิ่มในตะกร้า'}</button></div>
+                    <div class="summary-header-box"><div class="summary-title${isDrift(timer) ? ' drift' : ''}">${timer.name}</div><button class="btn-basket-toggle ${inBasket ? 'in-basket' : ''}" onclick="toggleBasket(${timer.id})">${inBasket ? '✓ อยู่ในตะกร้า' : '🛒 เพิ่มในตะกร้า'}</button></div>
                     <div class="summary-content">
                         ${_sumHTML}
                     </div>
@@ -301,7 +425,7 @@ function renderSummaryCard(card, timer) {
             }
         }
     } else {
-        card.innerHTML = `<div class="summary-header-box"><div class="summary-title" style="background:#333">${timer.name}</div></div><div class="summary-content"><p style="color:${timer.isRunning ? "#00e676" : "#555"}; font-size: 1.2rem;">${timer.isRunning ? "กำลังเล่น..." : "ว่าง"}</p></div><div class="summary-footer"><input type="text" class="discount-field-full" placeholder="กรอกจำนวนเงิน" disabled style="opacity: 0.3;"><button class="btn-confirm-full" style="background: #222; color: #444; cursor: default;">ตกลง</button></div>`;
+        card.innerHTML = `<div class="summary-header-box"><div class="summary-title idle${isDrift(timer) ? ' drift' : ''}">${timer.name}</div></div><div class="summary-content"><p style="color:${timer.isRunning ? "#00e676" : "#555"}; font-size: 1.2rem;">${timer.isRunning ? "กำลังเล่น..." : "ว่าง"}</p></div><div class="summary-footer"><input type="text" class="discount-field-full" placeholder="กรอกจำนวนเงิน" disabled style="opacity: 0.3;"><button class="btn-confirm-full" style="background: #222; color: #444; cursor: default;">ตกลง</button></div>`;
     }
 }
 
@@ -326,29 +450,7 @@ function startTimer(id) {
     if (timer.isRunning || timer.isFinished) return;
     if (!timer.activeClass && !timer.cdPackage) { alert("โปรดเลือก Class ก่อนเริ่ม"); return; }
     timer.isRunning = true; timer.isFinished = false;
-    timer.startTime = Date.now() - timer.elapsed;
-    timer.interval = setInterval(() => {
-        timer.elapsed = Date.now() - timer.startTime;
-        const el = document.getElementById(`display-${id}`);
-        if (el) {
-            if (timer.cdPackage) {
-                el.textContent = formatCdDisplay(timer);
-                el.style.color = getCdColor(timer);
-            } else {
-                el.textContent = formatTime(timer.elapsed);
-            }
-        }
-        if (timer.cdPackage) {
-            checkCdAlert(timer);
-            checkCdTimesUp(timer);
-            const cardEl = document.getElementById(`card-${timer.id}`);
-            if (cardEl) {
-                const isOt = (timer.cdBaseSeconds || timer.cdPackage.package_seconds) * 1000 - timer.elapsed <= 0;
-                cardEl.classList.toggle('cd-overtime-blink', isOt);
-            }
-        }
-        saveData();
-    }, 100);
+    _runTimerInterval(timer);
     saveData();
     renderTimerCard(document.getElementById(`card-${id}`), timer);
     renderSummaryCard(document.getElementById(`summary-card-${id}`), timer);
@@ -368,7 +470,8 @@ function resetTimer(id) {
         const overtimeMins = overtimeSecs >= CD_OVERTIME_FREE_SECONDS
             ? (CD_OVERTIME_CEIL ? Math.ceil(overtimeSecs / 60) : Math.floor(overtimeSecs / 60))
             : 0;
-        const perMin = CLASS_CONFIG[pkg.package_class]?.perMin || 0;
+        // ค่าเกินเวลา: รถดริฟใช้ DRIFT_CONFIG, รถตักใช้ราคาตาม class ของ package
+        const perMin = (isDrift(timer) ? DRIFT_CONFIG : CLASS_CONFIG[pkg.package_class])?.perMin || 0;
         const overtimeCost = overtimeMins * perMin;
         const allPackages = [pkg, ...(timer.cdExtraPackages || [])];
         const totalPackagePrice = allPackages.reduce((sum, p) => sum + Number(p.package_price), 0);
@@ -379,7 +482,7 @@ function resetTimer(id) {
         const overtimeDisplay = `${Math.floor(overtimeSecs / 60)}:${String(overtimeSecs % 60).padStart(2,'0')}`;
         timer.summary = {
             isCountdown: true, package: pkg, extraPackages: timer.cdExtraPackages || [],
-            class: pkg.package_class,
+            class: pkg.package_class, vehicle: vehicleOf(timer),
             totalMs: elapsedMs, totalDisplay,
             packageMinutes: Math.floor(baseSeconds / 60),
             packagePrice: totalPackagePrice,
@@ -396,10 +499,10 @@ function resetTimer(id) {
     }
     // ─── Normal timer summary ──────────────────────────────────────────────────
     if (timer.activeClass) {
-        const config = CLASS_CONFIG[timer.activeClass];
+        const config = getRate(timer);
         const minutes = Math.floor(timer.elapsed / 60000);
         const total = config.base + (minutes * config.perMin);
-        timer.summary = { minutes, class: timer.activeClass, base: config.base, total, originalTotal: total, elapsed: timer.elapsed, discount: 0 };
+        timer.summary = { minutes, class: timer.activeClass, vehicle: vehicleOf(timer), base: config.base, total, originalTotal: total, elapsed: timer.elapsed, discount: 0 };
         timer.isFinished = true; timer.payType = null;
     }
     clearInterval(timer.interval); timer.isRunning = false;
@@ -445,17 +548,13 @@ async function clearTableData(id) {
     }
 
     if (timer.summary) {
-        reportData.totalClients++;
-        reportData['count' + timer.summary.class]++;
-        reportData.totalTimeMs += timer.summary.elapsed;
-        reportData.grandTotal += timer.summary.total;
+        const _vehicle   = vehicleOf(timer);
         const _incomeAmt = REPORT_INCOME_AFTER_DISCOUNT ? timer.summary.total : (timer.summary.originalTotal || timer.summary.total)
-        reportData['income' + timer.summary.class] = (reportData['income' + timer.summary.class] || 0) + _incomeAmt;
-        if (timer.payType === 'cash') { reportData.cashTotal = (reportData.cashTotal || 0) + timer.summary.total; }
-        else if (timer.payType === 'transfer') { reportData.transferTotal = (reportData.transferTotal || 0) + timer.summary.total; }
+        applyToReport({ vehicle: _vehicle, cls: timer.summary.class, elapsed: timer.summary.elapsed, paid: timer.summary.total, income: _incomeAmt, payType: timer.payType }, 1);
         const now = new Date();
         const timeStr = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-        transactionLogs.unshift({ id: Date.now(), time: timeStr, name: timer.name, class: timer.summary.class, duration: timer.summary.minutes, amount: timer.summary.total, elapsed: timer.summary.elapsed, payType: timer.payType });
+        // income เก็บไว้ด้วย เพื่อให้ลบรายการแล้วหักรายได้คืนได้ตรงกับที่บวกเข้าไป
+        transactionLogs.unshift({ id: Date.now(), time: timeStr, name: timer.name, vehicle: _vehicle, class: timer.summary.class, duration: timer.summary.minutes, amount: timer.summary.total, income: _incomeAmt, elapsed: timer.summary.elapsed, payType: timer.payType });
         if (transactionLogs.length > 100) transactionLogs.pop();
     }
     const bIdx = basket.indexOf(id); if (bIdx !== -1) { basket.splice(bIdx, 1); renderBasket(); }
@@ -464,7 +563,7 @@ async function clearTableData(id) {
     const _didRedeem  = (parseInt(document.getElementById(`use-points-${id}`)?.value) || 0) > 0
     const _tableName  = timer.name
     const _payType    = timer.payType
-    timer.isFinished = false; timer.summary = null; timer.elapsed = 0; timer.activeClass = null; timer.payType = null; timer._phone = null; timer._balance = null; timer._usePoints = 0; timer._pointsInfo = null; timer.cdPackage = null; timer.cdAlerted = false; timer.cdTimesUp = false; timer.cdBaseSeconds = 0; timer.cdExtraPackages = [];
+    resetTimerState(timer);
     document.getElementById(`card-${id}`)?.classList.remove('cd-overtime-blink');
     saveData(); renderTimerCard(document.getElementById(`card-${id}`), timer); renderSummaryCard(document.getElementById(`summary-card-${id}`), timer); updateReportUI(); renderLogs();
     showPaymentToast(_tableName, _earnAmt, _payType)
@@ -476,25 +575,12 @@ function deleteLogEntry(logId) {
     const index = transactionLogs.findIndex(log => log.id === logId);
     if (index !== -1) {
         const log = transactionLogs[index];
-        if (log.isBasket && log.items) {
-            log.items.forEach(item => {
-                reportData.totalClients = Math.max(0, reportData.totalClients - 1);
-                reportData['count' + item.class] = Math.max(0, reportData['count' + item.class] - 1);
-                reportData.totalTimeMs = Math.max(0, reportData.totalTimeMs - item.elapsed);
-                reportData.grandTotal = Math.max(0, reportData.grandTotal - item.amount);
-                reportData['income' + item.class] = Math.max(0, (reportData['income' + item.class] || 0) - (item.originalAmount || item.amount));
-            });
-            if (log.payType === 'cash') reportData.cashTotal = Math.max(0, (reportData.cashTotal || 0) - log.amount);
-            else if (log.payType === 'transfer') reportData.transferTotal = Math.max(0, (reportData.transferTotal || 0) - log.amount);
-        } else {
-            reportData.totalClients = Math.max(0, reportData.totalClients - 1);
-            reportData['count' + log.class] = Math.max(0, reportData['count' + log.class] - 1);
-            reportData.totalTimeMs = Math.max(0, reportData.totalTimeMs - log.elapsed);
-            reportData.grandTotal = Math.max(0, reportData.grandTotal - log.amount);
-            reportData['income' + log.class] = Math.max(0, (reportData['income' + log.class] || 0) - log.amount);
-            if (log.payType === 'cash') { reportData.cashTotal = Math.max(0, (reportData.cashTotal || 0) - log.amount); }
-            else if (log.payType === 'transfer') { reportData.transferTotal = Math.max(0, (reportData.transferTotal || 0) - log.amount); }
-        }
+        // หักคืนรายโต๊ะ/คัน ตามประเภทรถ — รายการใหม่มี income เก็บไว้ จึงหักคืนได้ตรงกับที่บวก
+        // รายการเก่า (ไม่มี vehicle/income) นับเป็นรถตัก และหักแบบเดิม
+        const entries = (log.isBasket && log.items)
+            ? log.items.map(item => ({ vehicle: item.vehicle, cls: item.class, elapsed: item.elapsed, paid: item.amount, income: item.income ?? (item.originalAmount || item.amount), payType: log.payType }))
+            : [{ vehicle: log.vehicle, cls: log.class, elapsed: log.elapsed, paid: log.amount, income: log.income ?? log.amount, payType: log.payType }];
+        entries.forEach(e => applyToReport(e, -1));
         transactionLogs.splice(index, 1); saveData(); updateReportUI(); renderLogs();
     }
 }
@@ -507,6 +593,20 @@ function updateReportUI() {
     document.getElementById('incomeA').textContent = (reportData.incomeA || 0).toLocaleString();
     document.getElementById('incomeB').textContent = (reportData.incomeB || 0).toLocaleString();
     document.getElementById('incomeC').textContent = (reportData.incomeC || 0).toLocaleString();
+    const vb = vehicleBreakdown(reportData);
+    const setText = (id, v) => { document.getElementById(id).textContent = v; };
+    setText('countExcavator',    vb.excavator.count);
+    setText('incomeExcavator',   vb.excavator.income.toLocaleString());
+    setText('timeExcavator',     fmtHoursMins(vb.excavator.timeMs));
+    setText('cashExcavator',     vb.excavator.cash.toLocaleString());
+    setText('transferExcavator', vb.excavator.transfer.toLocaleString());
+    setText('countDrift',        vb.drift.count);
+    setText('incomeDrift',       vb.drift.income.toLocaleString());
+    setText('countDriftB',       vb.drift.count);
+    setText('incomeDriftB',      vb.drift.income.toLocaleString());
+    setText('timeDrift',         fmtHoursMins(vb.drift.timeMs));
+    setText('cashDrift',         vb.drift.cash.toLocaleString());
+    setText('transferDrift',     vb.drift.transfer.toLocaleString());
     document.getElementById('grandTotal').textContent = reportData.grandTotal.toLocaleString();
     document.getElementById('cashTotal').textContent = (reportData.cashTotal || 0).toLocaleString();
     document.getElementById('transferTotal').textContent = (reportData.transferTotal || 0).toLocaleString();
@@ -523,7 +623,7 @@ function resetFullReport() {
 
 function clearReportData() {
     if (!confirm('ล้างข้อมูลสรุปยอดทั้งหมดใช่หรือไม่?')) return;
-    reportData = { totalClients: 0, countA: 0, countB: 0, countC: 0, incomeA: 0, incomeB: 0, incomeC: 0, totalTimeMs: 0, grandTotal: 0, cashTotal: 0, transferTotal: 0 };
+    reportData = emptyReport();
     saveData();
     updateReportUI();
 }
@@ -644,6 +744,10 @@ function confirmDailyClose() {
                 totalClients: ex.totalClients + reportData.totalClients,
                 countA: ex.countA + reportData.countA, countB: ex.countB + reportData.countB, countC: ex.countC + reportData.countC,
                 incomeA: ex.incomeA + reportData.incomeA, incomeB: ex.incomeB + reportData.incomeB, incomeC: ex.incomeC + reportData.incomeC,
+                countDrift: (ex.countDrift || 0) + (reportData.countDrift || 0), incomeDrift: (ex.incomeDrift || 0) + (reportData.incomeDrift || 0),
+                timeDriftMs: (ex.timeDriftMs || 0) + (reportData.timeDriftMs || 0),
+                cashDrift: (ex.cashDrift || 0) + (reportData.cashDrift || 0), transferDrift: (ex.transferDrift || 0) + (reportData.transferDrift || 0),
+                totalTimeMs: (ex.totalTimeMs || 0) + (reportData.totalTimeMs || 0),
                 cashTotal: ex.cashTotal + dayCashNet, transferTotal: ex.transferTotal + dayTransferNet,
                 grandTotal: mergedGrand,
                 expenses: mergedExpenses,
@@ -657,6 +761,10 @@ function confirmDailyClose() {
                 totalClients: reportData.totalClients,
                 countA: reportData.countA, countB: reportData.countB, countC: reportData.countC,
                 incomeA: reportData.incomeA, incomeB: reportData.incomeB, incomeC: reportData.incomeC,
+                countDrift: reportData.countDrift || 0, incomeDrift: reportData.incomeDrift || 0,
+                // เก็บไว้เผื่อรายงานแยกตามประเภทรถในอนาคต (cashDrift/transferDrift = ยอดรับจริงก่อนหักรายจ่าย)
+                timeDriftMs: reportData.timeDriftMs || 0, cashDrift: reportData.cashDrift || 0, transferDrift: reportData.transferDrift || 0,
+                totalTimeMs: reportData.totalTimeMs || 0,
                 cashTotal: dayCashNet, transferTotal: dayTransferNet,
                 grandTotal: reportData.grandTotal,
                 expenses: [...dailyExpenses],
@@ -665,22 +773,26 @@ function confirmDailyClose() {
             });
         }
     }
-    reportData = { totalClients: 0, countA: 0, countB: 0, countC: 0, incomeA: 0, incomeB: 0, incomeC: 0, totalTimeMs: 0, grandTotal: 0, cashTotal: 0, transferTotal: 0 };
+    reportData = emptyReport();
     dailyExpenses = [];
     saveData(); updateReportUI();
     closeExpenseModal();
     alert('บันทึกรายจ่าย และรีเซ็ตยอดขายประจำวันสำเร็จครับ!');
 }
 
-function controlAll(action) {
-    timers.forEach(t => {
+// vehicle: 'excavator' = ปุ่มด้านบน (รถตัก), 'drift' = ปุ่มใน section รถดริฟ
+function controlAll(action, vehicle = 'excavator') {
+    timers.filter(t => vehicleOf(t) === vehicle).forEach(t => {
         if (action === 'start' && !t.isRunning && !t.isFinished && t.activeClass) startTimer(t.id);
         if (action === 'stop' && t.isRunning) stopTimer(t.id);
-        if (action === 'reset' && !t.isFinished) resetTimer(t.id);
+        // ล้างทั้งหมด = เช็คบิลเฉพาะคันที่เล่นแล้ว (กำลังเล่น/หยุดไว้) — คันที่ยังไม่เริ่มไม่ต้องออกบิล
+        // (รถดริฟมี class B ตลอด ถ้าไม่เช็ค elapsed จะได้บิล 0 นาทีทุกคันที่ว่าง)
+        if (action === 'reset' && !t.isFinished && (t.isRunning || t.elapsed > 0)) resetTimer(t.id);
     });
 }
-function updateName(id, val) { const timer = timers.find(t => t.id === id); timer.name = val || `โต๊ะที่ ${id}`; saveData(); renderTimerCard(document.getElementById(`card-${id}`), timer); renderSummaryCard(document.getElementById(`summary-card-${id}`), timer); }
+function updateName(id, val) { const timer = timers.find(t => t.id === id); timer.name = val || newTimer(id).name; saveData(); renderTimerCard(document.getElementById(`card-${id}`), timer); renderSummaryCard(document.getElementById(`summary-card-${id}`), timer); }
 countInput.addEventListener('change', () => { createTimers(); saveData(); });
+driftCountInput.addEventListener('change', () => { createTimers(); saveData(); });
 
 // เพิ่มฟังก์ชันสำหรับรองรับการล้างข้อมูลจากหน้าต่างรายงานโดยตรง (แก้ปัญหา iPad)
 window.clearMonthlyHistory = function () {
@@ -735,6 +847,10 @@ function openMonthlyReportPage() {
                     <td class="num">${N(item.incomeB).toLocaleString()}</td>
                     <td class="num">${N(item.countC)}</td>
                     <td class="num">${N(item.incomeC).toLocaleString()}</td>
+                    <td class="num col-ex">${N(item.countA) + N(item.countB) + N(item.countC)}</td>
+                    <td class="num col-ex">${(N(item.incomeA) + N(item.incomeB) + N(item.incomeC)).toLocaleString()}</td>
+                    <td class="num col-drift">${N(item.countDrift)}</td>
+                    <td class="num col-drift">${N(item.incomeDrift).toLocaleString()}</td>
                     <td class="num">${N(item.totalClients)}</td>
                     <td class="num font-green">${gt.toLocaleString()}</td>
                     <td class="num font-blue">${m.grossCash.toLocaleString()}</td>
@@ -746,7 +862,7 @@ function openMonthlyReportPage() {
                 </tr>`;
     }).join('');
 
-    if (historyData.length === 0) { rowsHTML = `<tr><td colspan="15" class="empty">ยังไม่มีข้อมูลรายวันถูกบันทึกไว้ (ข้อมูลจะบันทึกเมื่อกดปุ่ม "รีเซ็ตยอดขายวันนี้")</td></tr>`; }
+    if (historyData.length === 0) { rowsHTML = `<tr><td colspan="19" class="empty">ยังไม่มีข้อมูลรายวันถูกบันทึกไว้ (ข้อมูลจะบันทึกเมื่อกดปุ่ม "รีเซ็ตยอดขายวันนี้")</td></tr>`; }
 
     const sum = f => historyData.reduce((s, item) => s + N(f(item)), 0);
     const sumGrand = sum(i => i.grandTotal);
@@ -757,6 +873,8 @@ function openMonthlyReportPage() {
     const sumiaB = sum(i => i.incomeB);
     const sumcC = sum(i => i.countC);
     const sumiaC = sum(i => i.incomeC);
+    const sumcDrift = sum(i => i.countDrift);
+    const sumiaDrift = sum(i => i.incomeDrift);
     const sumGrossCash     = sum(i => rowMetrics(i).grossCash);
     const sumGrossTransfer = sum(i => rowMetrics(i).grossTransfer);
     const sumCash     = sum(i => rowMetrics(i).netCash);
@@ -790,6 +908,8 @@ function openMonthlyReportPage() {
                         .font-blue { color: #0288d1; }
                         .font-orange { color: #e65100; }
                         .total-row { background-color: #eaeff5 !important; font-weight: bold; }
+                        th.col-ex, td.col-ex { background-color: #f1f8e9; }
+                        th.col-drift, td.col-drift { background-color: #e3f2fd; }
                         .empty { padding: 30px; color: #999; font-style: italic; }
                         @media print { .btn-container { display: none; } .table-wrap { overflow: visible; } }
                     </style>
@@ -811,6 +931,8 @@ function openMonthlyReportPage() {
                                 <th colspan="2">Class A</th>
                                 <th colspan="2">Class B</th>
                                 <th colspan="2">Class C</th>
+                                <th colspan="2" class="col-ex">รถตักรวม</th>
+                                <th colspan="2" class="col-drift">รถดริฟ</th>
                                 <th rowspan="2">จำนวนลูกค้า<br>(โต๊ะ)</th>
                                 <th rowspan="2">รายได้ทั้งหมด<br>(บาท)</th>
                                 <th colspan="2">เงินรับจริง<br>(ก่อนหักรายจ่าย)</th>
@@ -825,6 +947,10 @@ function openMonthlyReportPage() {
                                 <th>รายได้</th>
                                 <th>จำนวนโต๊ะ</th>
                                 <th>รายได้</th>
+                                <th class="col-ex">จำนวนโต๊ะ</th>
+                                <th class="col-ex">รายได้</th>
+                                <th class="col-drift">จำนวนโต๊ะ</th>
+                                <th class="col-drift">รายได้</th>
                                 <th>เงินสด</th>
                                 <th>เงินโอน</th>
                                 <th>เงินสด</th>
@@ -841,6 +967,10 @@ function openMonthlyReportPage() {
                                 <td class="num">${sumiaB.toLocaleString()}</td>
                                 <td class="num">${sumcC}</td>
                                 <td class="num">${sumiaC.toLocaleString()}</td>
+                                <td class="num col-ex">${sumcA + sumcB + sumcC}</td>
+                                <td class="num col-ex">${(sumiaA + sumiaB + sumiaC).toLocaleString()}</td>
+                                <td class="num col-drift">${sumcDrift}</td>
+                                <td class="num col-drift">${sumiaDrift.toLocaleString()}</td>
                                 <td class="num">${sumClients}</td>
                                 <td class="num font-green">${sumGrand.toLocaleString()}</td>
                                 <td class="num font-blue">${sumGrossCash.toLocaleString()}</td>
@@ -885,7 +1015,7 @@ window.addEventListener('storage', (e) => {
 });
 
 function exportBackup() {
-    const keys = ['fn_timers', 'fn_report', 'fn_logs', 'fn_monthly_history', 'fn_count'];
+    const keys = ['fn_timers', 'fn_report', 'fn_logs', 'fn_monthly_history', 'fn_count', 'fn_drift_count'];
     const backup = {
         _meta: { app: 'FN MODEL EXCAVATOR', exportedAt: new Date().toISOString() }
     };
@@ -917,7 +1047,7 @@ function importBackup(event) {
             }
             const exportedAt = new Date(backup._meta.exportedAt).toLocaleString('th-TH');
             if (!confirm('ยืนยันการกู้คืนข้อมูลจากไฟล์ที่ Export เมื่อ ' + exportedAt + '?\n\n⚠ ข้อมูลปัจจุบันทั้งหมดจะถูกแทนที่ด้วยข้อมูลในไฟล์นี้')) return;
-            const keys = ['fn_timers', 'fn_report', 'fn_logs', 'fn_monthly_history', 'fn_count'];
+            const keys = ['fn_timers', 'fn_report', 'fn_logs', 'fn_monthly_history', 'fn_count', 'fn_drift_count'];
             keys.forEach(key => {
                 if (backup[key] !== undefined) localStorage.setItem(key, JSON.stringify(backup[key]));
             });
@@ -998,7 +1128,7 @@ function renderBasket() {
     document.getElementById('basketCount').textContent = items.length;
     document.getElementById('basketSubtotal').textContent = originalSubtotal.toLocaleString();
     document.getElementById('basketItemsList').innerHTML = items.map(t =>
-        `<div class="basket-item"><span class="basket-item-name">${t.name}</span><span class="basket-item-detail">Class ${t.summary.class} · ${t.summary.minutes} นาที</span><span class="basket-item-price">${t.summary.total.toLocaleString()} บาท</span><button class="basket-item-remove" onclick="toggleBasket(${t.id})">✕</button></div>`
+        `<div class="basket-item"><span class="basket-item-name">${t.name}</span><span class="basket-item-detail">${isDrift(t) ? 'รถดริฟ' : `Class ${t.summary.class}`} · ${t.summary.minutes} นาที</span><span class="basket-item-price">${t.summary.total.toLocaleString()} บาท</span><button class="basket-item-remove" onclick="toggleBasket(${t.id})">✕</button></div>`
     ).join('');
     updateBasketTotals();
 }
@@ -1050,16 +1180,11 @@ async function confirmBasketPayment() {
         if (!isLast) remaining -= d;
         const tableTotal = Math.max(0, timer.summary.total - d);
         console.log(`[BASKET] ${timer.name}: summary.total=${timer.summary.total}, d=${d}, tableTotal=${tableTotal}`)
-        reportData.totalClients++;
-        reportData['count' + timer.summary.class]++;
-        reportData.totalTimeMs += timer.summary.elapsed;
-        reportData.grandTotal += tableTotal;
+        const _bVehicle   = vehicleOf(timer);
         const _bIncomeAmt = REPORT_INCOME_AFTER_DISCOUNT ? tableTotal : (timer.summary.originalTotal || timer.summary.total)
-        reportData['income' + timer.summary.class] = (reportData['income' + timer.summary.class] || 0) + _bIncomeAmt;
-        if (basketPayType === 'cash') reportData.cashTotal = (reportData.cashTotal || 0) + tableTotal;
-        else reportData.transferTotal = (reportData.transferTotal || 0) + tableTotal;
-        logItems.push({ name: timer.name, class: timer.summary.class, minutes: timer.summary.minutes, amount: tableTotal, originalAmount: timer.summary.total, elapsed: timer.summary.elapsed });
-        timer.isFinished = false; timer.summary = null; timer.elapsed = 0; timer.activeClass = null; timer.payType = null; timer._phone = null; timer._balance = null; timer._usePoints = 0; timer._pointsInfo = null; timer.cdPackage = null; timer.cdAlerted = false; timer.cdTimesUp = false; timer.cdBaseSeconds = 0; timer.cdExtraPackages = [];
+        applyToReport({ vehicle: _bVehicle, cls: timer.summary.class, elapsed: timer.summary.elapsed, paid: tableTotal, income: _bIncomeAmt, payType: basketPayType }, 1);
+        logItems.push({ name: timer.name, vehicle: _bVehicle, class: timer.summary.class, minutes: timer.summary.minutes, amount: tableTotal, originalAmount: timer.summary.total, income: _bIncomeAmt, elapsed: timer.summary.elapsed });
+        resetTimerState(timer);
         document.getElementById(`card-${timer.id}`)?.classList.remove('cd-overtime-blink');
         renderTimerCard(document.getElementById(`card-${timer.id}`), timer);
         renderSummaryCard(document.getElementById(`summary-card-${timer.id}`), timer);
@@ -1472,18 +1597,28 @@ async function loadCdPackages() {
     } catch(e) {}
 }
 
+// package ที่เลือกได้สำหรับ timer นี้: ต้องเป็นประเภทรถเดียวกัน
+// ซื้อเวลาเพิ่ม (extend) ต้องเป็น class เดียวกับ package แรกด้วย
+function _cdPackagesFor(timer, mode) {
+    const vehicle = vehicleOf(timer);
+    const filterClass = mode === 'extend' ? (timer?.cdPackage?.package_class || null) : null;
+    return cdPackages.filter(p => pkgVehicle(p) === vehicle && (!filterClass || p.package_class === filterClass));
+}
+
 function _renderCdPackageList() {
     const classColor = { A: '#2e7d32', B: '#1565c0', C: '#6a1b9a' };
-    const currentTimer = _cdModalMode === 'extend' ? timers.find(t => t.id === _cdModalTimerId) : null;
-    const filterClass = currentTimer?.cdPackage?.package_class || null;
-    const list = filterClass ? cdPackages.filter(p => p.package_class === filterClass) : cdPackages;
+    const currentTimer = timers.find(t => t.id === _cdModalTimerId);
+    const list = _cdPackagesFor(currentTimer, _cdModalMode);
     document.getElementById('cdPackageList').innerHTML = list.map((pkg, idx) => {
         const realIdx = cdPackages.indexOf(pkg);
+        const tag = pkgVehicle(pkg) === 'drift'
+            ? `<span style="background:#0277bd;color:white;padding:2px 9px;border-radius:4px;font-size:0.8rem;margin-right:8px;">รถดริฟ</span>`
+            : `<span style="background:${classColor[pkg.package_class]||'#555'};color:white;padding:2px 9px;border-radius:4px;font-size:0.8rem;margin-right:8px;">Class ${pkg.package_class}</span>`;
         return `
         <div class="cd-pkg-item" onclick="selectCdPackage(${realIdx})">
             <div style="display:flex;align-items:center;justify-content:space-between;">
                 <div>
-                    <span style="background:${classColor[pkg.package_class]||'#555'};color:white;padding:2px 9px;border-radius:4px;font-size:0.8rem;margin-right:8px;">Class ${pkg.package_class}</span>
+                    ${tag}
                     <strong style="color:#eee;">${fmtPkgDuration(pkg.package_seconds)}</strong>
                 </div>
                 <span style="color:#f1c40f;font-weight:bold;font-size:1.05rem;">${Number(pkg.package_price).toLocaleString()} บาท</span>
@@ -1494,7 +1629,11 @@ function _renderCdPackageList() {
 }
 
 function openCdModal(timerId) {
-    if (!cdPackages.length) { alert('ยังไม่มี package เหมาเวลาในระบบ\nกรุณาเพิ่ม package ในส่วนจัดการ package ก่อนครับ'); return; }
+    const timer = timers.find(t => t.id === timerId);
+    if (!_cdPackagesFor(timer, 'start').length) {
+        alert(`ยังไม่มี package เหมาเวลาของ${isDrift(timer) ? 'รถดริฟ' : 'รถตัก'}ในระบบ\nกรุณาเพิ่ม package ในส่วนจัดการ package ก่อนครับ`);
+        return;
+    }
     _cdModalMode = 'start';
     _cdModalTimerId = timerId;
     document.getElementById('cdModalTitle').textContent = '⏱ เลือก Package เหมาเวลา';
@@ -1503,7 +1642,8 @@ function openCdModal(timerId) {
 }
 
 function openCdExtendModal(timerId) {
-    if (!cdPackages.length) { alert('ยังไม่มี package เหมาเวลาในระบบ'); return; }
+    const timer = timers.find(t => t.id === timerId);
+    if (!_cdPackagesFor(timer, 'extend').length) { alert(`ยังไม่มี package ${isDrift(timer) ? 'รถดริฟ' : 'Class ' + (timer?.cdPackage?.package_class || '')} สำหรับซื้อเวลาเพิ่ม`); return; }
     _cdModalMode = 'extend';
     _cdModalTimerId = timerId;
     document.getElementById('cdModalTitle').textContent = '+ ซื้อเวลาเพิ่ม';
@@ -1566,6 +1706,7 @@ async function loadCdPackagesAdmin() {
         if (!data.data.length) { el.innerHTML = '<div style="color:#555;padding:10px;">ยังไม่มี package</div>'; return; }
         el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
             <thead><tr style="color:#888;border-bottom:1px solid #333;">
+                <th style="text-align:left;padding:6px 8px;">ประเภทรถ</th>
                 <th style="text-align:left;padding:6px 8px;">Class</th>
                 <th style="text-align:center;padding:6px 8px;">ระยะเวลา</th>
                 <th style="text-align:center;padding:6px 8px;">ราคา</th>
@@ -1575,6 +1716,7 @@ async function loadCdPackagesAdmin() {
             </tr></thead>
             <tbody>${data.data.map(p => `
                 <tr style="border-bottom:1px solid #222;opacity:${p.package_status==='active'?1:0.5};">
+                    <td style="padding:7px 8px;color:${pkgVehicle(p)==='drift'?'#4fc3f7':'#aaa'};white-space:nowrap;">${pkgVehicle(p)==='drift'?'รถดริฟ':'รถตัก'}</td>
                     <td style="padding:7px 8px;"><span style="background:${classColor[p.package_class]||'#555'};color:white;padding:2px 9px;border-radius:4px;font-size:0.8rem;">Class ${p.package_class}</span></td>
                     <td style="padding:7px 8px;text-align:center;color:#eee;">${fmtPkgDuration(p.package_seconds)}</td>
                     <td style="padding:7px 8px;text-align:center;color:#f1c40f;font-weight:bold;">${Number(p.package_price).toLocaleString()} บาท</td>
@@ -1593,7 +1735,9 @@ function openCdPkgModal(pkg) {
     const modal = document.getElementById('cdPkgModal');
     document.getElementById('cdPkgModalTitle').textContent = pkg ? 'แก้ไข Package' : 'เพิ่ม Package';
     document.getElementById('cdPkgId').value       = pkg?.package_id       || '';
+    document.getElementById('cdPkgVehicle').value  = pkgVehicle(pkg);
     document.getElementById('cdPkgClass').value    = pkg?.package_class    || 'A';
+    onCdPkgVehicleChange();
     document.getElementById('cdPkgSeconds').value  = pkg?.package_seconds  || '';
     updateCdSecondsHint(pkg?.package_seconds || '');
     document.getElementById('cdPkgPrice').value    = pkg?.package_price    || '';
@@ -1601,6 +1745,14 @@ function openCdPkgModal(pkg) {
     updateCdAlertHint(pkg?.package_alert_seconds ?? 120);
     document.getElementById('cdPkgStatus').value   = pkg?.package_status   || 'active';
     modal.style.display = 'flex';
+}
+
+// รถดริฟมีแค่ Class B → ล็อกช่อง Class
+function onCdPkgVehicleChange() {
+    const drift = document.getElementById('cdPkgVehicle').value === 'drift';
+    const clsEl = document.getElementById('cdPkgClass');
+    if (drift) clsEl.value = 'B';
+    clsEl.disabled = drift;
 }
 
 function closeCdPkgModal() {
@@ -1614,6 +1766,7 @@ async function saveCdPackage() {
     if (!seconds || seconds < 60) { alert('กรุณากรอกระยะเวลา (วินาที) ขั้นต่ำ 60 วินาที'); return; }
     if (isNaN(price) || price < 0) { alert('กรุณากรอกราคา'); return; }
     const body = {
+        package_vehicle_type:  document.getElementById('cdPkgVehicle').value,
         package_class:         document.getElementById('cdPkgClass').value,
         package_seconds:       seconds,
         package_price:         price,

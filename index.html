@@ -18,13 +18,6 @@
     <div class="header-container">
         <div class="header-section">
             <h2>ระบบจับเวลาคาเฟ่รถตัก FN MODEL EXCAVATOR</h2>
-            <div class="controls-top">
-                <label>จำนวนโต๊ะลูกค้า:</label>
-                <input type="number" id="timerCount" value="8" min="1" max="50">
-                <button class="btn-start-all" onclick="controlAll('start')">เริ่มทั้งหมด</button>
-                <button class="btn-stop-all" onclick="controlAll('stop')">หยุดทั้งหมด</button>
-                <button class="btn-reset-all" onclick="controlAll('reset')">ล้างทั้งหมด</button>
-            </div>
         </div>
         <div class="logo-wrapper">
             <img src="https://github.com/funnypdc/logo/blob/main/logo-01.png?raw=true" alt="FN LOGO">
@@ -33,7 +26,31 @@
 
     
 
+    <!-- Section รถตัก -->
+    <div class="section-header">
+        <h3 class="section-title">รถตัก</h3>
+        <div class="controls-top">
+            <label>จำนวนโต๊ะลูกค้า:</label>
+            <input type="number" id="timerCount" value="8" min="1" max="50">
+            <button class="btn-start-all" onclick="controlAll('start')">เริ่มทั้งหมด</button>
+            <button class="btn-stop-all" onclick="controlAll('stop')">หยุดทั้งหมด</button>
+            <button class="btn-reset-all" onclick="controlAll('reset')">ล้างทั้งหมด</button>
+        </div>
+    </div>
     <div id="timerContainer" class="timer-grid"></div>
+
+    <!-- Section รถแข่งดริฟ (Class B เท่านั้น ราคาตาม DRIFT_CONFIG ใน config.js) -->
+    <div class="section-header drift-section-header">
+        <h3 class="section-title drift">รถแข่งดริฟ</h3>
+        <div class="controls-top">
+            <label>จำนวนรถดริฟ:</label>
+            <input type="number" id="driftCount" value="4" min="0" max="50">
+            <button class="btn-start-all" onclick="controlAll('start', 'drift')">เริ่มทั้งหมด</button>
+            <button class="btn-stop-all" onclick="controlAll('stop', 'drift')">หยุดทั้งหมด</button>
+            <button class="btn-reset-all" onclick="controlAll('reset', 'drift')">ล้างทั้งหมด</button>
+        </div>
+    </div>
+    <div id="driftTimerContainer" class="timer-grid"></div>
     <div id="nameInputs"
         style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 30px 0;">
     </div>
@@ -85,6 +102,10 @@
             <h4 id="cdPkgModalTitle" style="color:#f1c40f;margin:0 0 16px;">เพิ่ม Package</h4>
             <input id="cdPkgId" type="hidden">
             <div style="display:flex;flex-direction:column;gap:10px;">
+                <select id="cdPkgVehicle" onchange="onCdPkgVehicleChange()" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
+                    <option value="excavator">รถตัก</option>
+                    <option value="drift">รถดริฟ (Class B)</option>
+                </select>
                 <select id="cdPkgClass" style="background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 12px;border-radius:6px;font-family:inherit;">
                     <option value="A">Class A</option>
                     <option value="B">Class B</option>
@@ -186,24 +207,37 @@
         </div>
 
         <div class="report-header">ลูกค้าทั้งหมด <span id="totalClients">0</span> โต๊ะ</div>
-        <div class="report-row">
-            Class <span class="highlight">A</span> : <span id="countA">0</span> โต๊ะ &nbsp;&nbsp;
-            Class <span class="highlight">B</span> : <span id="countB">0</span> โต๊ะ &nbsp;&nbsp;
-            Class <span class="highlight">C</span> : <span id="countC">0</span> โต๊ะ
+
+        <!-- ยอดแยกตามประเภทรถ: รถตักแสดงอะไร รถดริฟแสดงเหมือนกัน -->
+        <div class="vr-grid">
+            <div class="vr-box">
+                <div class="vr-title">รถตัก</div>
+                <div class="vr-main"><span id="countExcavator">0</span> โต๊ะ · <span id="incomeExcavator">0</span> บาท</div>
+                <table class="vr-table">
+                    <tr><td>Class <span class="highlight">A</span></td><td><span id="countA">0</span> โต๊ะ</td><td><span class="vr-money" id="incomeA">0</span> บาท</td></tr>
+                    <tr><td>Class <span class="highlight">B</span></td><td><span id="countB">0</span> โต๊ะ</td><td><span class="vr-money" id="incomeB">0</span> บาท</td></tr>
+                    <tr><td>Class <span class="highlight">C</span></td><td><span id="countC">0</span> โต๊ะ</td><td><span class="vr-money" id="incomeC">0</span> บาท</td></tr>
+                </table>
+                <div class="vr-row">เวลาเล่น <span class="highlight" id="timeExcavator">0 ชม. 0 นาที</span></div>
+                <div class="vr-row">เงินสด <span class="vr-cash" id="cashExcavator">0</span> · เงินโอน <span class="vr-transfer" id="transferExcavator">0</span> บาท</div>
+            </div>
+            <div class="vr-box drift">
+                <div class="vr-title">รถดริฟ</div>
+                <div class="vr-main"><span id="countDrift">0</span> โต๊ะ · <span id="incomeDrift">0</span> บาท</div>
+                <table class="vr-table">
+                    <tr><td>Class <span class="highlight">B</span></td><td><span id="countDriftB">0</span> โต๊ะ</td><td><span class="vr-money" id="incomeDriftB">0</span> บาท</td></tr>
+                </table>
+                <div class="vr-row">เวลาเล่น <span class="highlight" id="timeDrift">0 ชม. 0 นาที</span></div>
+                <div class="vr-row">เงินสด <span class="vr-cash" id="cashDrift">0</span> · เงินโอน <span class="vr-transfer" id="transferDrift">0</span> บาท</div>
+            </div>
         </div>
-        <div class="report-row" style="font-size: 1rem; color: #aaa;">
-            รายได้ Class A: <span style="color: #00e676; font-weight: bold;" id="incomeA">0</span> บาท
-            &nbsp;&nbsp;|&nbsp;&nbsp;
-            รายได้ Class B: <span style="color: #00e676; font-weight: bold;" id="incomeB">0</span> บาท
-            &nbsp;&nbsp;|&nbsp;&nbsp;
-            รายได้ Class C: <span style="color: #00e676; font-weight: bold;" id="incomeC">0</span> บาท
-        </div>
+
+        <div class="report-row vr-shop-title">รวมทั้งร้าน</div>
         <div class="report-row">
             รวมเวลาเล่นทั้งหมด <span class="highlight" id="totalHours">0</span> ชั่วโมง <span class="highlight"
                 id="totalMinutes">0</span> นาที
         </div>
-        <div class="report-row"
-            style="border-top: 1px dashed #333; padding-top: 15px; margin-top: 15px; font-size: 1rem; color: #aaa;">
+        <div class="report-row" style="font-size: 1rem; color: #aaa;">
             เงินสดรวม: <span style="color: #0288d1; font-weight: bold;" id="cashTotal">0</span> บาท
             &nbsp;&nbsp;|&nbsp;&nbsp;
             เงินโอนรวม: <span style="color: #f57c00; font-weight: bold;" id="transferTotal">0</span> บาท
