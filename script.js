@@ -310,6 +310,7 @@ function createTimers(isLoad = false) {
         (drift ? driftContainer : container).appendChild(card); summaryContainer.appendChild(sCard);
         renderTimerCard(card, timerObj); renderSummaryCard(sCard, timerObj);
         const nameDiv = document.createElement('div');
+        if (drift) nameDiv.className = 'name-drift';
         const label = drift ? `ดริฟ ${id - DRIFT_ID_BASE}` : id;
         nameDiv.innerHTML = `<label>[${label}]: </label><input type="text" value="${timerObj.name}" oninput="updateName(${id}, this.value)">`;
         nameContainer.appendChild(nameDiv);

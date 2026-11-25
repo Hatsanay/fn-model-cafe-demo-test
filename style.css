@@ -878,6 +878,10 @@ button {
 .summary-card.drift-summary { border-color: #1565c0; background: #161c24; }
 /* การ์ดสรุปรถดริฟใบแรกเริ่มที่คอลัมน์ 1 → ขึ้นบรรทัดใหม่ ไม่ต่อท้ายแถวรถตัก */
 .summary-card:not(.drift-summary) + .summary-card.drift-summary { grid-column-start: 1; }
+/* ช่องตั้งชื่อ: รถดริฟช่องแรกขึ้นบรรทัดใหม่เหมือนกัน */
+#nameInputs > div:not(.name-drift) + .name-drift { grid-column-start: 1; }
+#nameInputs .name-drift label { color: #4fc3f7; }
+#nameInputs .name-drift input { border-color: #1565c0; background: #161c24; color: #4fc3f7; }
 
 .badge-drift {
     background-color: #0277bd;
