@@ -5,7 +5,7 @@
 // ─── API ──────────────────────────────────────────────────────────────────────
 // const API_BASE = 'http://localhost:3000/api/v1'
 // const API_BASE = 'https://fnmodelbackend.dktimeh.com/api/v1'
-const API_BASE = 'https://fnmodelbackend.fasttiw.com/api/v1'
+const API_BASE = 'https://fnmodelbackendtest.fasttiw.com/api/v1'
 // const API_BASE = 'https://fnmodelbackendtest.fasttiw.com/api/v1'
 
 //
